@@ -18,7 +18,7 @@ const COLORS = [
 function HoverReviewPopup({ content, popupSize, setPopupSize }) {
   const popupRef = useRef(null);
   const containerRef = useRef(null);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [position, setPosition] = useState({ top: 0, left: 0, isAbove: false });
   
 
   useEffect(() => {
@@ -30,12 +30,15 @@ function HoverReviewPopup({ content, popupSize, setPopupSize }) {
       const popupWidth = popupRef.current.offsetWidth || 600;
       
       let newTop = 0;
+      let isAbove = false;
       if (parentRect.bottom + popupHeight > windowHeight && parentRect.top > popupHeight) {
         // Place above
         newTop = parentRect.top - popupHeight - 8;
+        isAbove = true;
       } else {
         // Place below
-        newTop = parentRect.bottom + 8;
+        newTop = parentRect.bottom;
+        isAbove = false;
       }
 
       let newLeft = parentRect.left;
@@ -49,7 +52,7 @@ function HoverReviewPopup({ content, popupSize, setPopupSize }) {
           newLeft = 20;
       }
 
-      setPosition({ top: newTop, left: newLeft });
+      setPosition({ top: newTop, left: newLeft, isAbove });
     }
   }, [content, popupSize]);
 
@@ -65,7 +68,7 @@ function HoverReviewPopup({ content, popupSize, setPopupSize }) {
   };
 
   return (
-    <div ref={containerRef} className="fixed z-[100]" style={{ top: position.top, left: position.left }}>
+    <div ref={containerRef} className={`fixed z-[100] ${position.isAbove ? "pb-2" : "pt-2"}`} style={{ top: position.top, left: position.left }}>
       <div 
         ref={popupRef}
         onMouseUp={handleMouseUp}
