@@ -220,6 +220,40 @@ def delete_template(tid: int, session: Session = Depends(get_session)):
         session.commit()
     return {"status": "ok"}
 
+class ImportSettingsRequest(BaseModel):
+    settings: dict
+    templates: list[LinkTemplateModel]
+
+@app.get("/api/settings/export")
+def export_settings(session: Session = Depends(get_session)):
+    settings_db = session.exec(select(AppSetting)).all()
+    templates = session.exec(select(ExternalLinkTemplate)).all()
+    return {
+        "settings": {s.key: s.value for s in settings_db},
+        "templates": [{"language": t.language, "url_template": t.url_template, "icon_url": t.icon_url} for t in templates]
+    }
+
+@app.post("/api/settings/import")
+def import_settings(req: ImportSettingsRequest, session: Session = Depends(get_session)):
+    for k, v in req.settings.items():
+        setting = session.get(AppSetting, k)
+        if setting:
+            setting.value = v
+        else:
+            setting = AppSetting(key=k, value=v)
+        session.add(setting)
+    
+    existing_templates = session.exec(select(ExternalLinkTemplate)).all()
+    for t in existing_templates:
+        session.delete(t)
+    
+    for t_data in req.templates:
+        t = ExternalLinkTemplate(language=t_data.language, url_template=t_data.url_template, icon_url=t_data.icon_url)
+        session.add(t)
+        
+    session.commit()
+    return {"status": "ok"}
+
 # --- Static Frontend Serving ---
 static_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_path):

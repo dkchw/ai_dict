@@ -189,8 +189,56 @@ function App() {
   const renderContent = () => {
     if (activeTab === 'settings') {
       return (
-        <div className="p-6 max-w-2xl mx-auto text-gray-900 dark:text-gray-100">
-          <h2 className="text-2xl font-bold mb-6">Settings</h2>
+        <div className="h-full overflow-y-auto">
+          <div className="p-6 max-w-2xl mx-auto text-gray-900 dark:text-gray-100">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">Settings</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    const res = await fetch('/api/settings/export')
+                    const data = await res.json()
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = 'ai_dict_settings.json'
+                    a.click()
+                  }}
+                  className="bg-green-600 hover:bg-green-700 transition-colors text-white px-3 py-1.5 rounded text-sm font-medium"
+                >
+                  Export
+                </button>
+                <label className="bg-purple-600 hover:bg-purple-700 transition-colors text-white px-3 py-1.5 rounded text-sm font-medium cursor-pointer">
+                  Import
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = async (e) => {
+                        try {
+                          const data = JSON.parse(e.target.result)
+                          await fetch('/api/settings/import', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(data)
+                          })
+                          alert('Settings imported successfully')
+                          fetchSettings()
+                        } catch (err) {
+                          alert('Invalid settings file')
+                        }
+                      }
+                      reader.readAsText(file)
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium mb-2">OpenRouter API Key</label>
@@ -203,42 +251,36 @@ function App() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Main Model (For initial explanation)</label>
-              {models.length > 0 ? (
-                <select 
-                  value={settings.MAIN_MODEL || 'inclusionai/ling-3.0-flash'}
-                  onChange={e => setSettings({...settings, MAIN_MODEL: e.target.value})}
-                  className="w-full border dark:border-gray-600 dark:bg-gray-800 rounded p-2"
-                >
-                  <option value="inclusionai/ling-3.0-flash">inclusionai/ling-3.0-flash (Default)</option>
-                  {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
-                </select>
-              ) : (
-                <input 
-                  type="text" 
-                  value={settings.MAIN_MODEL || ''}
-                  onChange={e => setSettings({...settings, MAIN_MODEL: e.target.value})}
-                  className="w-full border dark:border-gray-600 dark:bg-gray-800 rounded p-2"
-                />
+              <input 
+                type="text" 
+                list="main-models-list"
+                value={settings.MAIN_MODEL || ''}
+                onChange={e => setSettings({...settings, MAIN_MODEL: e.target.value})}
+                placeholder="inclusionai/ling-3.0-flash"
+                className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {models.length > 0 && (
+                <datalist id="main-models-list">
+                  <option value="inclusionai/ling-3.0-flash" />
+                  {models.map(m => <option key={m.id} value={m.id} />)}
+                </datalist>
               )}
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Chat Model (For follow up)</label>
-              {models.length > 0 ? (
-                <select 
-                  value={settings.CHAT_MODEL || 'deepseek/deepseek-v4-flash-latest'}
-                  onChange={e => setSettings({...settings, CHAT_MODEL: e.target.value})}
-                  className="w-full border dark:border-gray-600 dark:bg-gray-800 rounded p-2"
-                >
-                  <option value="deepseek/deepseek-v4-flash-latest">deepseek/deepseek-v4-flash-latest (Default)</option>
-                  {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
-                </select>
-              ) : (
-                <input 
-                  type="text" 
-                  value={settings.CHAT_MODEL || ''}
-                  onChange={e => setSettings({...settings, CHAT_MODEL: e.target.value})}
-                  className="w-full border dark:border-gray-600 dark:bg-gray-800 rounded p-2"
-                />
+              <input 
+                type="text" 
+                list="chat-models-list"
+                value={settings.CHAT_MODEL || ''}
+                onChange={e => setSettings({...settings, CHAT_MODEL: e.target.value})}
+                placeholder="deepseek/deepseek-v4-flash-latest"
+                className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {models.length > 0 && (
+                <datalist id="chat-models-list">
+                  <option value="deepseek/deepseek-v4-flash-latest" />
+                  {models.map(m => <option key={m.id} value={m.id} />)}
+                </datalist>
               )}
             </div>
             <div>
@@ -331,6 +373,7 @@ function App() {
               </form>
             </div>
           </div>
+        </div>
         </div>
       )
     }
@@ -485,9 +528,38 @@ function App() {
     }
 
     if (activeTab === 'history') {
+      const totalWords = words.length;
+      const totalSearches = words.reduce((sum, w) => sum + (w.search_count || 0), 0);
+
       return (
-        <div className="p-6 text-gray-900 dark:text-gray-100">
-          <h2 className="text-2xl font-bold mb-6">History</h2>
+        <div className="h-full overflow-y-auto p-6 text-gray-900 dark:text-gray-100">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
+            <h2 className="text-2xl font-bold">History</h2>
+            <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg border dark:border-gray-700 shadow-sm items-center">
+              <div className="flex items-center gap-1">
+                <span className="font-medium">Total Words:</span> 
+                <span className="text-gray-900 dark:text-gray-100 font-bold">{totalWords}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="font-medium">Total Searches:</span> 
+                <span className="text-gray-900 dark:text-gray-100 font-bold">{totalSearches}</span>
+              </div>
+              {words.some(w => w.color) && (
+                <div className="flex gap-3 items-center lg:ml-2 lg:border-l lg:pl-4 dark:border-gray-700">
+                  {COLORS.map(c => {
+                    const count = words.filter(w => w.color === c.id).length;
+                    if (count === 0) return null;
+                    return (
+                      <div key={c.id} className="flex items-center gap-1.5" title={c.label}>
+                        <div className="w-3 h-3 rounded-full" style={{backgroundColor: c.hex}} />
+                        <span className="text-gray-900 dark:text-gray-100 font-bold">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="grid gap-3">
             {words.map(w => (
               <div key={w.id} className="border dark:border-gray-700 p-4 rounded-lg flex justify-between items-center bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
