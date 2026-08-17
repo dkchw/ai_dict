@@ -18,8 +18,8 @@ const COLORS = [
 function HoverReviewPopup({ content, popupSize, setPopupSize }) {
   const popupRef = useRef(null);
   const containerRef = useRef(null);
-  const [position, setPosition] = useState('bottom');
-  const [leftOffset, setLeftOffset] = useState(0);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  
 
   useEffect(() => {
     if (containerRef.current && popupRef.current) {
@@ -29,20 +29,29 @@ function HoverReviewPopup({ content, popupSize, setPopupSize }) {
       const popupHeight = popupRef.current.offsetHeight || 300;
       const popupWidth = popupRef.current.offsetWidth || 600;
       
+      let newTop = 0;
       if (parentRect.bottom + popupHeight > windowHeight && parentRect.top > popupHeight) {
-        setPosition('top');
+        // Place above
+        newTop = parentRect.top - popupHeight - 8;
       } else {
-        setPosition('bottom');
+        // Place below
+        newTop = parentRect.bottom + 8;
       }
 
+      let newLeft = parentRect.left;
       const overflowRight = (parentRect.left + popupWidth) - (windowWidth - 20);
       if (overflowRight > 0) {
-        setLeftOffset(-overflowRight);
-      } else {
-        setLeftOffset(0);
+        newLeft -= overflowRight;
       }
+      
+      // Prevent overflow on left
+      if (newLeft < 20) {
+          newLeft = 20;
+      }
+
+      setPosition({ top: newTop, left: newLeft });
     }
-  }, [content]);
+  }, [content, popupSize]);
 
   const handleMouseUp = () => {
     if (popupRef.current) {
@@ -56,11 +65,7 @@ function HoverReviewPopup({ content, popupSize, setPopupSize }) {
   };
 
   return (
-    <div 
-      ref={containerRef} 
-      className={`absolute z-50 ${position === 'top' ? 'bottom-full pb-2' : 'top-full pt-2'}`}
-      style={{ left: leftOffset }}
-    >
+    <div ref={containerRef} className="fixed z-[100]" style={{ top: position.top, left: position.left }}>
       <div 
         ref={popupRef}
         onMouseUp={handleMouseUp}
