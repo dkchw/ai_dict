@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Search, History, Settings as SettingsIcon, BookOpen, Share2, Trash2, ExternalLink, Moon, Sun, Loader2, RefreshCw, Library } from 'lucide-react'
+import SearchTab from './components/SearchTab'
+import CompareTab from './components/CompareTab'
+import { Search, History, Settings as SettingsIcon, BookOpen, Share2, Trash2, ExternalLink, Moon, Sun, Loader2, RefreshCw, Library, GitCompare, List } from 'lucide-react'
 
 // Colors for bookmarking: Red (Forgot), Orange (Hard), Yellow (Medium), Green (Easy), Blue (Research)
 const COLORS = [
@@ -12,15 +14,18 @@ const COLORS = [
 ]
 
 function App() {
-  const [activeTab, setActiveTab] = useState('search') // search, history, flashcards, settings
+  const [activeTab, setActiveTab] = useState('search') // search, history, flashcards, settings, compare, compare-history
   const [words, setWords] = useState([])
-  const [currentWord, setCurrentWord] = useState(null)
-  const [chats, setChats] = useState([])
-  const [searchTerm, setSearchTerm] = useState('')
+  const [comparisons, setComparisons] = useState([])
+  const [searchTabs, setSearchTabs] = useState([{ id: 'init', title: 'New Search', loading: false, hasData: false, initialWord: null }])
+  const [activeSearchTabId, setActiveSearchTabId] = useState('init')
+  
+  const [compareTabs, setCompareTabs] = useState([{ id: 'init', title: 'New Compare', loading: false, hasData: false, initialComparison: null }])
+  const [activeCompareTabId, setActiveCompareTabId] = useState('init')
+  
   const [historySearchTerm, setHistorySearchTerm] = useState('')
-  const [chatInput, setChatInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [settings, setSettings] = useState({ OPENROUTER_API_KEY: '', MAIN_MODEL: '', CHAT_MODEL: '' })
+  const [compareHistorySearchTerm, setCompareHistorySearchTerm] = useState('')
+const [settings, setSettings] = useState({ OPENROUTER_API_KEY: '', MAIN_MODEL: '', CHAT_MODEL: '', COMPARE_MODEL: '', FALLBACK_MODELS: '' })
   const [templates, setTemplates] = useState([])
   const [models, setModels] = useState([])
   const [darkMode, setDarkMode] = useState(false)
@@ -28,6 +33,7 @@ function App() {
 
   useEffect(() => {
     fetchWords()
+    fetchComparisons()
     fetchSettings()
     // Load dark mode preference
     const isDark = localStorage.getItem('darkMode') === 'true'
@@ -73,6 +79,23 @@ function App() {
     if (res.ok) setWords(await res.json())
   }
 
+  const fetchComparisons = async () => {
+    const res = await fetch('/api/comparisons')
+    if (res.ok) setComparisons(await res.json())
+  }
+
+  
+
+  
+
+  
+
+  const deleteComparison = async (id) => {
+    if (!confirm('Are you sure?')) return
+    await fetch(`/api/comparisons/${id}`, { method: 'DELETE' })
+    fetchComparisons()
+  }
+
   const fetchSettings = async () => {
     const res = await fetch('/api/settings')
     if (res.ok) {
@@ -82,103 +105,21 @@ function App() {
     }
   }
 
-  const handleSearch = async (e) => {
-    e?.preventDefault()
-    if (!searchTerm.trim()) return
-    setLoading(true)
-    setCurrentWord({ term: searchTerm, isTemp: true }) // Set temp word to show UI immediately
-    setChats([])
-    setActiveTab('search')
-    try {
-      const res = await fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ term: searchTerm })
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      setCurrentWord(data.word)
-      setChats(data.chats)
-      fetchWords() // Refresh history
-    } catch (err) {
-      alert(err.message)
-      setCurrentWord(null)
-    } finally {
-      setLoading(false)
-    }
-  }
+  
 
-  const handleRegenerate = async (model) => {
-    if (!currentWord || currentWord.isTemp) return
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/words/${currentWord.id}/regenerate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model })
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      setCurrentWord(data.word)
-      setChats(data.chats)
-    } catch (err) {
-      alert(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
+  
 
-  const handleChat = async (e) => {
-    e?.preventDefault()
-    if (!chatInput.trim() || !currentWord || currentWord.isTemp) return
-    const newChat = { role: 'user', content: chatInput, id: 'temp' }
-    setChats([...chats, newChat])
-    setChatInput('')
-    setLoading(true)
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word_id: currentWord.id, content: newChat.content })
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      setChats(prev => [...prev.filter(c => c.id !== 'temp'), newChat, data])
-    } catch (err) {
-      alert(err.message)
-      setChats(prev => prev.filter(c => c.id !== 'temp'))
-    } finally {
-      setLoading(false)
-    }
-  }
+  
 
-  const updateColor = async (colorId) => {
-    if (!currentWord || currentWord.isTemp) return
-    const res = await fetch(`/api/words/${currentWord.id}/color`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ color: colorId === currentWord.color ? null : colorId })
-    })
-    if (res.ok) {
-      const updated = await res.json()
-      setCurrentWord(updated)
-      fetchWords()
-    }
-  }
+
 
   const deleteWord = async (id) => {
     if (!confirm('Are you sure?')) return
     await fetch(`/api/words/${id}`, { method: 'DELETE' })
-    if (currentWord?.id === id) {
-      setCurrentWord(null)
-      setChats([])
-    }
     fetchWords()
   }
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text)
-  }
+  
 
   const handleHomeClick = () => {
     setCurrentWord(null)
@@ -274,12 +215,29 @@ function App() {
                 list="chat-models-list"
                 value={settings.CHAT_MODEL || ''}
                 onChange={e => setSettings({...settings, CHAT_MODEL: e.target.value})}
-                placeholder="deepseek/deepseek-v4-flash-latest"
+                placeholder="~deepseek/deepseek-v4-flash-latest"
                 className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               {models.length > 0 && (
                 <datalist id="chat-models-list">
-                  <option value="deepseek/deepseek-v4-flash-latest" />
+                  <option value="~deepseek/deepseek-v4-flash-latest" />
+                  {models.map(m => <option key={m.id} value={m.id} />)}
+                </datalist>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Compare Model (For comparison)</label>
+              <input 
+                type="text" 
+                list="compare-models-list"
+                value={settings.COMPARE_MODEL || ''}
+                onChange={e => setSettings({...settings, COMPARE_MODEL: e.target.value})}
+                placeholder="~deepseek/deepseek-v4-flash-latest"
+                className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {models.length > 0 && (
+                <datalist id="compare-models-list">
+                  <option value="~deepseek/deepseek-v4-flash-latest" />
                   {models.map(m => <option key={m.id} value={m.id} />)}
                 </datalist>
               )}
@@ -294,9 +252,29 @@ function App() {
                 className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Dictionary Prompt</label>
+              <textarea 
+                value={settings.DICT_PROMPT || ''}
+                onChange={e => setSettings({...settings, DICT_PROMPT: e.target.value})}
+                placeholder="Leave blank to use default..."
+                rows="4"
+                className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Comparison Prompt</label>
+              <textarea 
+                value={settings.COMPARE_PROMPT || ''}
+                onChange={e => setSettings({...settings, COMPARE_PROMPT: e.target.value})}
+                placeholder="Leave blank to use default..."
+                rows="4"
+                className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+              />
+            </div>
             <button 
               onClick={async () => {
-                const keys = ['OPENROUTER_API_KEY', 'MAIN_MODEL', 'CHAT_MODEL', 'FALLBACK_MODELS']
+                const keys = ['OPENROUTER_API_KEY', 'MAIN_MODEL', 'CHAT_MODEL', 'COMPARE_MODEL', 'FALLBACK_MODELS', 'DICT_PROMPT', 'COMPARE_PROMPT']
                 for (let key of keys) {
                   await fetch('/api/settings', {
                     method: 'POST',
@@ -379,151 +357,52 @@ function App() {
       )
     }
 
+    if (activeTab === 'compare') {
+      return (
+        <div className="h-full flex flex-col">
+          <div className="flex bg-gray-100 dark:bg-gray-900 border-b dark:border-gray-800 overflow-x-auto">
+            {compareTabs.map(t => (
+              <div key={t.id} className={`flex items-center gap-2 px-4 py-2 border-r dark:border-gray-800 cursor-pointer ${t.id === activeCompareTabId ? 'bg-white dark:bg-gray-800 font-medium' : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500'}`} onClick={() => setActiveCompareTabId(t.id)}>
+                <span className="truncate max-w-[150px]">{t.title}</span>
+                {t.loading && <Loader2 size={12} className="animate-spin text-blue-500" />}
+                {!t.loading && t.hasData && <div className="w-2 h-2 rounded-full bg-green-500" title="Done"></div>}
+                <button onClick={(e) => { e.stopPropagation(); setCompareTabs(compareTabs.filter(st => st.id !== t.id)); if(activeCompareTabId === t.id) setActiveCompareTabId(compareTabs[0]?.id || '') }} className="ml-2 text-gray-400 hover:text-red-500">&times;</button>
+              </div>
+            ))}
+            <button onClick={() => { const id = Date.now().toString(); setCompareTabs([...compareTabs, { id, title: 'New Compare', loading: false, hasData: false, initialComparison: null }]); setActiveCompareTabId(id) }} className="px-4 py-2 hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 font-bold">+</button>
+          </div>
+          <div className="flex-1 overflow-hidden relative bg-gray-100 dark:bg-gray-950">
+            {compareTabs.map(t => (
+              <div key={t.id} className={t.id === activeCompareTabId ? 'h-full block' : 'hidden'}>
+                <CompareTab tabId={t.id} fetchComparisons={fetchComparisons} settings={settings} models={models} initialComparison={t.initialComparison} onUpdateTab={(id, data) => setCompareTabs(prev => prev.map(pt => pt.id === id ? { ...pt, ...data } : pt))} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     if (activeTab === 'search') {
       return (
-        <div className="h-full flex flex-col p-4 dark:text-gray-100">
-          <form onSubmit={handleSearch} className="flex gap-2 mb-4">
-            <input 
-              type="text" 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Search word (e.g. Hund {de})"
-              className="flex-1 border dark:border-gray-600 dark:bg-gray-800 rounded-lg p-3 text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            />
-            <button disabled={loading} type="submit" className="bg-blue-600 hover:bg-blue-700 transition-colors text-white px-6 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50">
-              {loading ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
-              <span>Search</span>
-            </button>
-          </form>
-
-          {currentWord ? (
-            <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-xl shadow-sm">
-              <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-                <div>
-                  <h2 className="text-2xl font-bold flex items-center gap-2">
-                    {currentWord.term}
-                    {currentWord.isTemp && <Loader2 className="animate-spin text-blue-500" size={20} />}
-                  </h2>
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    {currentWord.language && <span className="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded mr-2 text-gray-800 dark:text-gray-200">{currentWord.language}</span>}
-                    {currentWord.lemma && <span>Lemma: {currentWord.lemma} • </span>}
-                    {!currentWord.isTemp && `Searched ${currentWord.search_count} times`}
-                  </div>
-                </div>
-                {!currentWord.isTemp && (
-                  <div className="flex gap-2 items-center">
-                    <div className="relative group">
-                      <button className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors flex items-center gap-1" title="Regenerate explanation">
-                        <RefreshCw size={20} />
-                      </button>
-                      <div className="absolute right-0 top-full pt-1 w-48 hidden group-hover:block z-10">
-                        <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md shadow-lg overflow-hidden py-1">
-                          <div className="px-4 py-2 text-xs text-gray-500 font-bold uppercase tracking-wider">Regenerate with:</div>
-                          <button onClick={() => handleRegenerate(settings.MAIN_MODEL)} className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
-                            Default Model
-                          </button>
-                          {(settings.FALLBACK_MODELS || '').split(',').filter(m => m.trim()).map(m => (
-                            <button key={m} onClick={() => handleRegenerate(m.trim())} className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 truncate" title={m.trim()}>
-                              {m.trim()}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <button onClick={() => copyToClipboard(chats[0]?.content)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors" title="Copy initial explanation">
-                      <Share2 size={20} />
-                    </button>
-                    <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 p-1 rounded">
-                      {COLORS.map(c => (
-                        <button 
-                          key={c.id} 
-                          onClick={() => updateColor(c.id)}
-                          className={`w-6 h-6 rounded-full border-2 border-white dark:border-gray-800 transition-transform ${currentWord.color === c.id ? 'scale-125' : 'hover:scale-110'}`}
-                          style={{ backgroundColor: c.hex }}
-                          title={c.label}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+        <div className="h-full flex flex-col">
+          <div className="flex bg-gray-100 dark:bg-gray-900 border-b dark:border-gray-800 overflow-x-auto">
+            {searchTabs.map(t => (
+              <div key={t.id} className={`flex items-center gap-2 px-4 py-2 border-r dark:border-gray-800 cursor-pointer ${t.id === activeSearchTabId ? 'bg-white dark:bg-gray-800 font-medium' : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500'}`} onClick={() => setActiveSearchTabId(t.id)}>
+                <span className="truncate max-w-[150px]">{t.title}</span>
+                {t.loading && <Loader2 size={12} className="animate-spin text-blue-500" />}
+                {!t.loading && t.hasData && <div className="w-2 h-2 rounded-full bg-green-500" title="Done"></div>}
+                <button onClick={(e) => { e.stopPropagation(); setSearchTabs(searchTabs.filter(st => st.id !== t.id)); if(activeSearchTabId === t.id) setActiveSearchTabId(searchTabs[0]?.id || '') }} className="ml-2 text-gray-400 hover:text-red-500">&times;</button>
               </div>
-
-              {/* External Links */}
-              {!currentWord.isTemp && templates.filter(t => t.language === 'all' || t.language.toLowerCase() === currentWord.language?.toLowerCase()).length > 0 && (
-                <div className="p-2 border-b dark:border-gray-700 flex gap-2">
-                  {templates.filter(t => t.language === 'all' || t.language.toLowerCase() === currentWord.language?.toLowerCase()).map(t => (
-                    <a 
-                      key={t.id} 
-                      href={t.url_template.replace('{{str}}', encodeURIComponent(currentWord.term))} 
-                      target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-sm transition-colors"
-                    >
-                      {t.icon_url ? <img src={t.icon_url} className="w-4 h-4" alt="icon"/> : <ExternalLink size={14} />}
-                      Dict
-                    </a>
-                  ))}
-                </div>
-              )}
-
-              {/* Related Words */}
-              {!currentWord.isTemp && relatedWords.length > 0 && (
-                <div className="p-2 border-b dark:border-gray-700 flex gap-2 overflow-x-auto items-center">
-                  <span className="text-xs font-bold text-gray-500 uppercase ml-2">Related:</span>
-                  {relatedWords.map(rw => (
-                    <button 
-                      key={rw.id}
-                      onClick={() => {
-                        setCurrentWord(rw)
-                        setSearchTerm(rw.term)
-                        fetch(`/api/search`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({term: rw.term}) })
-                          .then(r => r.json())
-                          .then(d => { setChats(d.chats); setCurrentWord(d.word); })
-                      }}
-                      className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-full text-sm hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors whitespace-nowrap"
-                    >
-                      {rw.term}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {chats.map((chat, idx) => (
-                  <div key={chat.id || idx} className={`flex ${chat.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-xl p-4 ${chat.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 shadow-sm markdown-body dark:text-gray-200'}`}>
-                      {chat.role === 'user' ? chat.content : <ReactMarkdown>{chat.content}</ReactMarkdown>}
-                    </div>
-                  </div>
-                ))}
-                {loading && chats.length > 0 && <div className="text-gray-500 dark:text-gray-400 flex items-center gap-2"><Loader2 className="animate-spin" size={16} /> Thinking...</div>}
-                {currentWord.isTemp && chats.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                    <Loader2 className="animate-spin mb-4" size={32} />
-                    <p>Generating explanation...</p>
-                  </div>
-                )}
+            ))}
+            <button onClick={() => { const id = Date.now().toString(); setSearchTabs([...searchTabs, { id, title: 'New Search', loading: false, hasData: false, initialWord: null }]); setActiveSearchTabId(id) }} className="px-4 py-2 hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 font-bold">+</button>
+          </div>
+          <div className="flex-1 overflow-hidden relative bg-gray-100 dark:bg-gray-950">
+            {searchTabs.map(t => (
+              <div key={t.id} className={t.id === activeSearchTabId ? 'h-full block' : 'hidden'}>
+                <SearchTab tabId={t.id} fetchWords={fetchWords} settings={settings} models={models} templates={templates} initialWord={t.initialWord} onUpdateTab={(id, data) => setSearchTabs(prev => prev.map(pt => pt.id === id ? { ...pt, ...data } : pt))} />
               </div>
-
-              {!currentWord.isTemp && (
-                <form onSubmit={handleChat} className="p-3 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex gap-2">
-                  <input 
-                    type="text" 
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    placeholder="Ask a follow up question..."
-                    className="flex-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={loading}
-                  />
-                  <button disabled={loading} type="submit" className="bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors text-white px-4 rounded font-medium disabled:opacity-50">Send</button>
-                </form>
-              )}
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
-              Search for a word to begin
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )
     }
@@ -583,13 +462,10 @@ function App() {
                 <div 
                   className="flex-1 cursor-pointer" 
                   onClick={() => {
-                    setCurrentWord(w)
-                    setSearchTerm(w.term)
-                    setActiveTab('search')
-                    // Fetch chats
-                    fetch(`/api/search`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({term: w.term}) })
-                      .then(r => r.json())
-                      .then(d => { setChats(d.chats); setCurrentWord(d.word); })
+                    const id = Date.now().toString();
+                    setSearchTabs([...searchTabs, { id, title: w.term, loading: true, hasData: false, initialWord: w }]);
+                    setActiveSearchTabId(id);
+                    setActiveTab('search');
                   }}
                 >
                   <div className="flex items-center gap-2">
@@ -600,6 +476,65 @@ function App() {
                   {w.lemma && <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">Lemma: {w.lemma} • {w.language}</div>}
                 </div>
                 <button onClick={() => deleteWord(w.id)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"><Trash2 size={20} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    if (activeTab === 'compare-history') {
+      const filteredComparisons = comparisons.filter(c => 
+        c.terms.toLowerCase().includes(compareHistorySearchTerm.toLowerCase())
+      );
+      const totalComparisons = filteredComparisons.length;
+      const totalSearches = filteredComparisons.reduce((sum, c) => sum + (c.search_count || 0), 0);
+
+      return (
+        <div className="h-full overflow-y-auto p-6 text-gray-900 dark:text-gray-100">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-6 gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <h2 className="text-2xl font-bold">Comparison History</h2>
+              <div className="relative w-full sm:w-64">
+                <input 
+                  type="text" 
+                  value={compareHistorySearchTerm}
+                  onChange={e => setCompareHistorySearchTerm(e.target.value)}
+                  placeholder="Search comparison history..."
+                  className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg py-1.5 pl-9 pr-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm"
+                />
+                <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg border dark:border-gray-700 shadow-sm items-center">
+              <div className="flex items-center gap-1">
+                <span className="font-medium">Total Comparisons:</span> 
+                <span className="text-gray-900 dark:text-gray-100 font-bold">{totalComparisons}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="font-medium">Total Searches:</span> 
+                <span className="text-gray-900 dark:text-gray-100 font-bold">{totalSearches}</span>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3">
+            {filteredComparisons.map(c => (
+              <div key={c.id} className="border dark:border-gray-700 p-4 rounded-lg flex justify-between items-center bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
+                <div 
+                  className="flex-1 cursor-pointer" 
+                  onClick={() => {
+                    const id = Date.now().toString();
+                    setCompareTabs([...compareTabs, { id, title: c.terms, loading: true, hasData: false, initialComparison: c }]);
+                    setActiveCompareTabId(id);
+                    setActiveTab('compare');
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-lg">{c.terms}</span>
+                    <span className="text-gray-500 dark:text-gray-400 text-sm">({c.search_count} searches)</span>
+                  </div>
+                </div>
+                <button onClick={() => deleteComparison(c.id)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"><Trash2 size={20} /></button>
               </div>
             ))}
           </div>
@@ -669,9 +604,11 @@ function App() {
             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
         </div>
-        <nav className="flex-1 p-2 md:p-4 space-y-2">
+        <nav className="flex-1 p-2 md:p-4 space-y-2 overflow-y-auto">
           <NavItem icon={<Search />} label="Search" active={activeTab === 'search'} onClick={() => setActiveTab('search')} />
           <NavItem icon={<History />} label="History" active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
+          <NavItem icon={<GitCompare />} label="Compare" active={activeTab === 'compare'} onClick={() => setActiveTab('compare')} />
+          <NavItem icon={<List />} label="Compare History" active={activeTab === 'compare-history'} onClick={() => setActiveTab('compare-history')} />
           <NavItem icon={<BookOpen />} label="Flashcards" active={activeTab === 'flashcards'} onClick={() => setActiveTab('flashcards')} />
         </nav>
         <div className="p-2 md:p-4 border-t dark:border-gray-800 space-y-2">

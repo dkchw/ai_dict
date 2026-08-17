@@ -20,6 +20,20 @@ class ChatMessage(SQLModel, table=True):
     content: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+class Comparison(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    terms: str = Field(index=True) # e.g. "word1, word2"
+    search_count: int = Field(default=1)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ComparisonChat(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    comparison_id: int = Field(foreign_key="comparison.id", index=True)
+    role: str # "user" or "assistant"
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class AppSetting(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str

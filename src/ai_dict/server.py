@@ -7,8 +7,8 @@ from sqlmodel import Session, select
 from pydantic import BaseModel
 from typing import List, Optional
 
-from .db import init_db, get_session, Word, ChatMessage, AppSetting, ExternalLinkTemplate
-from .ai import explain_word, extract_language_and_lemma, chat_with_word
+from .db import init_db, get_session, Word, ChatMessage, AppSetting, ExternalLinkTemplate, Comparison, ComparisonChat
+from .ai import explain_word, extract_language_and_lemma, chat_with_word, compare_words, chat_with_comparison
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,6 +23,13 @@ class SearchRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     word_id: int
+    content: str
+
+class ComparisonSearchRequest(BaseModel):
+    terms: str
+
+class ComparisonChatRequest(BaseModel):
+    comparison_id: int
     content: str
 
 class UpdateColorRequest(BaseModel):
@@ -129,6 +136,128 @@ async def follow_up_chat(req: ChatRequest, session: Session = Depends(get_sessio
         return reply_msg.model_dump()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+class ChatUpdateRequest(BaseModel):
+    content: str
+
+@app.patch("/api/chats/{chat_id}")
+def update_chat(chat_id: int, req: ChatUpdateRequest, session: Session = Depends(get_session)):
+    chat = session.get(ChatMessage, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    chat.content = req.content
+    session.add(chat)
+    session.commit()
+    return chat.model_dump()
+
+@app.patch("/api/comparisons/chats/{chat_id}")
+def update_comparison_chat(chat_id: int, req: ChatUpdateRequest, session: Session = Depends(get_session)):
+    chat = session.get(ComparisonChat, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    chat.content = req.content
+    session.add(chat)
+    session.commit()
+    return chat.model_dump()
+
+@app.post("/api/comparisons/search")
+async def search_comparison(req: ComparisonSearchRequest, session: Session = Depends(get_session)):
+    # Check if existing
+    terms_list = [t.strip().lower() for t in req.terms.replace(';', ',').split(',') if t.strip()]
+    terms_list.sort()
+    normalized_terms = ", ".join(terms_list)
+    
+    existing = session.exec(select(Comparison).where(Comparison.terms == normalized_terms)).first()
+    if existing:
+        existing.search_count += 1
+        session.add(existing)
+        session.commit()
+        chats = session.exec(select(ComparisonChat).where(ComparisonChat.comparison_id == existing.id).order_by(ComparisonChat.created_at)).all()
+        return {"comparison": existing.model_dump(), "chats": [c.model_dump() for c in chats]}
+
+    try:
+        explanation = await compare_words(normalized_terms, session)
+        
+        new_comp = Comparison(terms=normalized_terms, search_count=1)
+        session.add(new_comp)
+        session.commit()
+        session.refresh(new_comp)
+        
+        system_msg = ComparisonChat(comparison_id=new_comp.id, role="assistant", content=explanation)
+        session.add(system_msg)
+        session.commit()
+        session.refresh(system_msg)
+        
+        return {"comparison": new_comp.model_dump(), "chats": [system_msg.model_dump()]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/comparisons/{comparison_id}/regenerate")
+async def regenerate_comparison(comparison_id: int, req: RegenerateRequest, session: Session = Depends(get_session)):
+    comp = session.get(Comparison, comparison_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Comparison not found")
+        
+    try:
+        explanation = await compare_words(comp.terms, session, explicit_model=req.model)
+        
+        first_chat = session.exec(select(ComparisonChat).where(ComparisonChat.comparison_id == comp.id).order_by(ComparisonChat.created_at)).first()
+        if first_chat:
+            first_chat.content = explanation
+            session.add(first_chat)
+        else:
+            first_chat = ComparisonChat(comparison_id=comp.id, role="assistant", content=explanation)
+            session.add(first_chat)
+            
+        session.commit()
+        session.refresh(comp)
+        session.refresh(first_chat)
+        
+        chats = session.exec(select(ComparisonChat).where(ComparisonChat.comparison_id == comp.id).order_by(ComparisonChat.created_at)).all()
+        return {"comparison": comp.model_dump(), "chats": [c.model_dump() for c in chats]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/comparisons/chat")
+async def follow_up_comparison_chat(req: ComparisonChatRequest, session: Session = Depends(get_session)):
+    comp = session.get(Comparison, req.comparison_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Comparison not found")
+        
+    user_msg = ComparisonChat(comparison_id=comp.id, role="user", content=req.content)
+    session.add(user_msg)
+    session.commit()
+    
+    chats = session.exec(select(ComparisonChat).where(ComparisonChat.comparison_id == comp.id).order_by(ComparisonChat.created_at)).all()
+    messages = [{"role": "system", "content": "You are a helpful language assistant. Continue the conversation regarding the word comparison."}]
+    for c in chats:
+        messages.append({"role": c.role, "content": c.content})
+        
+    try:
+        response_content = await chat_with_comparison(messages, session)
+        reply_msg = ComparisonChat(comparison_id=comp.id, role="assistant", content=response_content)
+        session.add(reply_msg)
+        session.commit()
+        session.refresh(reply_msg)
+        return reply_msg.model_dump()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/comparisons")
+def get_comparisons(session: Session = Depends(get_session)):
+    comps = session.exec(select(Comparison).order_by(Comparison.updated_at.desc())).all()
+    return comps
+
+@app.delete("/api/comparisons/{comparison_id}")
+def delete_comparison(comparison_id: int, session: Session = Depends(get_session)):
+    comp = session.get(Comparison, comparison_id)
+    if comp:
+        chats = session.exec(select(ComparisonChat).where(ComparisonChat.comparison_id == comp.id)).all()
+        for chat in chats:
+            session.delete(chat)
+        session.delete(comp)
+        session.commit()
+    return {"status": "ok"}
 
 @app.get("/api/words")
 def get_words(session: Session = Depends(get_session)):
