@@ -10,6 +10,7 @@ class Word(SQLModel, table=True):
     lemma: Optional[str] = None
     search_count: int = Field(default=1)
     color: Optional[str] = None # For the 5 colors
+    session_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -18,12 +19,14 @@ class ChatMessage(SQLModel, table=True):
     word_id: int = Field(foreign_key="word.id", index=True)
     role: str # "user" or "assistant"
     content: str
+    session_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Comparison(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     terms: str = Field(index=True) # e.g. "word1, word2"
     search_count: int = Field(default=1)
+    session_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -32,6 +35,23 @@ class ComparisonChat(SQLModel, table=True):
     comparison_id: int = Field(foreign_key="comparison.id", index=True)
     role: str # "user" or "assistant"
     content: str
+    session_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class Explain(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    text: str = Field(index=True)
+    search_count: int = Field(default=1)
+    session_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ExplainChat(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    explain_id: int = Field(foreign_key="explain.id", index=True)
+    role: str # "user" or "assistant"
+    content: str
+    session_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class AppSetting(SQLModel, table=True):
@@ -40,6 +60,7 @@ class AppSetting(SQLModel, table=True):
 
 class ExternalLinkTemplate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(default="Dict")
     language: str # e.g. 'de', 'en', or 'all'
     url_template: str # e.g. https://dict.leo.org/german-english/{{str}}
     icon_url: str

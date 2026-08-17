@@ -1,7 +1,55 @@
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Search, Share2, ExternalLink, Loader2, RefreshCw , Pencil, Check, X} from 'lucide-react'
+import { Search, Copy, ExternalLink, Loader2, RefreshCw , Pencil, Check, X, Trash2 } from 'lucide-react'
+
+const LANGUAGE_MAP = {
+  'english': ['en', 'eng'],
+  'german': ['de', 'deu', 'ger'],
+  'french': ['fr', 'fre', 'fra'],
+  'spanish': ['es', 'spa'],
+  'italian': ['it', 'ita'],
+  'japanese': ['ja', 'jpn', 'jp'],
+  'chinese': ['zh', 'zho', 'chi'],
+  'korean': ['ko', 'kor'],
+  'russian': ['ru', 'rus'],
+  'portuguese': ['pt', 'por'],
+  'dutch': ['nl', 'nld', 'dut'],
+  'vietnamese': ['vi', 'vie'],
+  'polish': ['pl', 'pol'],
+  'turkish': ['tr', 'tur'],
+  'arabic': ['ar', 'ara'],
+  'hindi': ['hi', 'hin'],
+  'swedish': ['sv', 'swe'],
+  'danish': ['da', 'dan'],
+  'norwegian': ['no', 'nor'],
+  'finnish': ['fi', 'fin'],
+  'greek': ['el', 'ell', 'gre'],
+  'czech': ['cs', 'ces', 'cze'],
+  'romanian': ['ro', 'ron', 'rum'],
+  'hungarian': ['hu', 'hun'],
+  'thai': ['th', 'tha'],
+  'indonesian': ['id', 'ind'],
+  'ukrainian': ['uk', 'ukr'],
+};
+
+function matchLanguage(aiLanguage, templateLanguage) {
+  if (!aiLanguage || !templateLanguage) return false;
+  const aiLang = aiLanguage.toLowerCase().trim();
+  const tplLangs = templateLanguage.toLowerCase().split(',').map(s => s.trim());
+  
+  if (tplLangs.includes('all')) return true;
+  if (tplLangs.includes(aiLang)) return true;
+  
+  for (const [name, codes] of Object.entries(LANGUAGE_MAP)) {
+    if (aiLang.includes(name) || name.includes(aiLang)) {
+      if (tplLangs.some(l => codes.includes(l) || l === name)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 export const COLORS = [
   { id: 'red', hex: '#ef4444', label: 'Forgot' },
@@ -66,7 +114,7 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
   useEffect(() => {
     let title = 'New Search';
     if (searchTerm) title = searchTerm;
-    if (currentWord && !currentWord.isTemp) title = currentWord.term;
+    if (currentWord && !currentWord.isTemp && currentWord.term) title = currentWord.term;
     onUpdateTab(tabId, { title, loading, hasData: !!currentWord && !currentWord.isTemp });
   }, [searchTerm, currentWord, loading]);
 
@@ -80,7 +128,7 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
       const res = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ term: searchTerm })
+        body: JSON.stringify({ term: searchTerm, session_id: localStorage.getItem('active_session_id') || undefined })
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
@@ -153,8 +201,12 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
     }
   }
 
+  const [copied, setCopied] = useState(false)
+
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -182,8 +234,25 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
                 {currentWord.term}
                 {currentWord.isTemp && <Loader2 className="animate-spin text-blue-500" size={20} />}
               </h2>
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {currentWord.language && <span className="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded mr-2 text-gray-800 dark:text-gray-200">{currentWord.language}</span>}
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center flex-wrap gap-2">
+                <span 
+                  className="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors text-gray-800 dark:text-gray-200"
+                  title="Click to edit language"
+                  onClick={async () => {
+                    const newLang = prompt('Enter correct language:', currentWord.language || '');
+                    if (newLang !== null) {
+                      await fetch(`/api/words/${currentWord.id}/language`, {
+                        method: 'PATCH',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ language: newLang })
+                      });
+                      setCurrentWord({...currentWord, language: newLang});
+                      fetchWords();
+                    }
+                  }}
+                >
+                  {currentWord.language || '+ Add Language'}
+                </span>
                 {currentWord.lemma && <span>Lemma: {currentWord.lemma} • </span>}
                 {!currentWord.isTemp && `Searched ${currentWord.search_count} times`}
               </div>
@@ -209,7 +278,21 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
                   </div>
                 </div>
                 <button onClick={() => copyToClipboard(chats[0]?.content)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors" title="Copy initial explanation">
-                  <Share2 size={20} />
+                  {copied ? <Check size={20} className="text-green-500" /> : <Copy size={20} />}
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (!confirm('Are you sure you want to delete this search?')) return;
+                    await fetch(`/api/words/${currentWord.id}`, { method: 'DELETE' });
+                    fetchWords();
+                    setCurrentWord(null);
+                    setChats([]);
+                    setSearchTerm('');
+                  }} 
+                  className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors" 
+                  title="Delete this search"
+                >
+                  <Trash2 size={20} />
                 </button>
                 <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 p-1 rounded">
                   {COLORS.map(c => (
@@ -226,9 +309,9 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
             )}
           </div>
 
-          {!currentWord.isTemp && templates.filter(t => t.language === 'all' || t.language.toLowerCase() === currentWord.language?.toLowerCase()).length > 0 && (
-            <div className="p-2 border-b dark:border-gray-700 flex gap-2">
-              {templates.filter(t => t.language === 'all' || t.language.toLowerCase() === currentWord.language?.toLowerCase()).map(t => (
+          {!currentWord.isTemp && templates.filter(t => matchLanguage(currentWord.language, t.language)).length > 0 && (
+            <div className="bg-gray-100 dark:bg-gray-800/50 px-4 py-2 border-b dark:border-gray-700 flex flex-wrap gap-2">
+              {templates.filter(t => matchLanguage(currentWord.language, t.language)).map(t => (
                 <a 
                   key={t.id} 
                   href={t.url_template.replace('{{str}}', encodeURIComponent(currentWord.term))} 
@@ -236,7 +319,7 @@ export default function SearchTab({ tabId, fetchWords, settings, models, templat
                   className="flex items-center gap-1 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-sm transition-colors"
                 >
                   {t.icon_url ? <img src={t.icon_url} className="w-4 h-4" alt="icon"/> : <ExternalLink size={14} />}
-                  Dict
+                  {t.name || 'Dict'}
                 </a>
               ))}
             </div>

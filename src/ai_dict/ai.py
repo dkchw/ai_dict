@@ -83,8 +83,8 @@ async def chat_with_word(messages: list[dict], session: Session) -> str:
 def extract_language_and_lemma(markdown_content: str):
     # Try to extract Language and Lemma from the markdown
     # Based on the system prompt structure
-    language_match = re.search(r'\*\*Language:\*\*\s*(.+)', markdown_content)
-    lemma_match = re.search(r'\*\*Base form \(lemma\):\*\*\s*(.+)', markdown_content)
+    language_match = re.search(r'\*\*Language:?\*\*:?\s*([^\n]+)', markdown_content, re.IGNORECASE)
+    lemma_match = re.search(r'\*\*Base form \(lemma\):?\*\*:?\s*([^\n]+)', markdown_content, re.IGNORECASE)
     
     language = language_match.group(1).strip() if language_match else None
     lemma = lemma_match.group(1).strip() if lemma_match else None
@@ -129,6 +129,46 @@ async def compare_words(terms: str, session: Session, explicit_model: str = None
     return response.choices[0].message.content
 
 async def chat_with_comparison(messages: list[dict], session: Session) -> str:
+    api_key = get_api_key(session)
+    if not api_key:
+        raise ValueError("OpenRouter API Key is missing.")
+        
+    client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+    
+    model = get_chat_model(session)
+    response = await client.chat.completions.create(
+        model=model,
+        messages=messages
+    )
+    return response.choices[0].message.content
+
+async def explain_text(text: str, session: Session, explicit_model: str = None) -> str:
+    api_key = get_api_key(session)
+    if not api_key:
+        raise ValueError("OpenRouter API Key is missing. Please set it in Settings.")
+    
+    client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+    
+    system_prompt = get_system_prompt(session)
+    model = explicit_model if explicit_model else get_main_model(session)
+    
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Please explain this sentence/paragraph:\n{text}"}
+        ]
+    )
+    
+    return response.choices[0].message.content
+
+async def chat_with_explain(messages: list[dict], session: Session) -> str:
     api_key = get_api_key(session)
     if not api_key:
         raise ValueError("OpenRouter API Key is missing.")
