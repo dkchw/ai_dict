@@ -17,6 +17,7 @@ function App() {
   const [currentWord, setCurrentWord] = useState(null)
   const [chats, setChats] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [historySearchTerm, setHistorySearchTerm] = useState('')
   const [chatInput, setChatInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState({ OPENROUTER_API_KEY: '', MAIN_MODEL: '', CHAT_MODEL: '' })
@@ -528,13 +529,29 @@ function App() {
     }
 
     if (activeTab === 'history') {
-      const totalWords = words.length;
-      const totalSearches = words.reduce((sum, w) => sum + (w.search_count || 0), 0);
+      const filteredWords = words.filter(w => 
+        w.term.toLowerCase().includes(historySearchTerm.toLowerCase()) || 
+        (w.lemma && w.lemma.toLowerCase().includes(historySearchTerm.toLowerCase()))
+      );
+      const totalWords = filteredWords.length;
+      const totalSearches = filteredWords.reduce((sum, w) => sum + (w.search_count || 0), 0);
 
       return (
         <div className="h-full overflow-y-auto p-6 text-gray-900 dark:text-gray-100">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 gap-4">
-            <h2 className="text-2xl font-bold">History</h2>
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-6 gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <h2 className="text-2xl font-bold">History</h2>
+              <div className="relative w-full sm:w-64">
+                <input 
+                  type="text" 
+                  value={historySearchTerm}
+                  onChange={e => setHistorySearchTerm(e.target.value)}
+                  placeholder="Search history..."
+                  className="w-full border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg py-1.5 pl-9 pr-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm shadow-sm"
+                />
+                <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
             <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-800 px-4 py-2 rounded-lg border dark:border-gray-700 shadow-sm items-center">
               <div className="flex items-center gap-1">
                 <span className="font-medium">Total Words:</span> 
@@ -544,10 +561,10 @@ function App() {
                 <span className="font-medium">Total Searches:</span> 
                 <span className="text-gray-900 dark:text-gray-100 font-bold">{totalSearches}</span>
               </div>
-              {words.some(w => w.color) && (
+              {filteredWords.some(w => w.color) && (
                 <div className="flex gap-3 items-center lg:ml-2 lg:border-l lg:pl-4 dark:border-gray-700">
                   {COLORS.map(c => {
-                    const count = words.filter(w => w.color === c.id).length;
+                    const count = filteredWords.filter(w => w.color === c.id).length;
                     if (count === 0) return null;
                     return (
                       <div key={c.id} className="flex items-center gap-1.5" title={c.label}>
@@ -561,7 +578,7 @@ function App() {
             </div>
           </div>
           <div className="grid gap-3">
-            {words.map(w => (
+            {filteredWords.map(w => (
               <div key={w.id} className="border dark:border-gray-700 p-4 rounded-lg flex justify-between items-center bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
                 <div 
                   className="flex-1 cursor-pointer" 
