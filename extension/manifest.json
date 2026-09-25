@@ -1,0 +1,81 @@
+{
+  "manifest_version": 3,
+  "name": "AI Dict - Pop-up Dictionary & Assistant",
+  "version": "11.0.0",
+  "description": "Definer replacement powered by AI Dict. Select words to look up, automatically save to your active profile with custom prompts, and access external dictionaries.",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab",
+    "scripting",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "host_permissions": [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "AI Dict"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*", "content.css"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+D",
+        "mac": "Alt+Shift+D",
+        "windows": "Alt+Shift+D",
+        "chromeos": "Alt+Shift+D",
+        "linux": "Alt+Shift+D"
+      },
+      "description": "Open AI Dict Quick Popup"
+    },
+    "toggle_card": {
+      "suggested_key": {
+        "default": "Alt+D",
+        "mac": "Alt+D"
+      },
+      "description": "Toggle AI Dict Floating Window on Page"
+    }
+  }
+}

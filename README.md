@@ -1,65 +1,152 @@
 # AI Dict
 
-AI Dict is an advanced, AI-powered dictionary and language learning application that leverages modern Large Language Models (LLMs) via OpenRouter to provide deep, contextual explanations, comparisons, and translations of words and texts.
+AI Dict is an **AI-powered dictionary, language learning, and translation workbench** engineered for deep, contextual, and durable language study. It bridges state-of-the-art Large Language Models (LLMs) and high-speed local offline Machine Translation (NLLB-200) into a unified, local-first application — giving you an interactive language tutor, dictionary, and flashcard review system that grows with your personal learning journey.
 
-Unlike a traditional dictionary, AI Dict acts as a language tutor, providing etymology, related phrases, nuanced meaning differences, and the ability to ask follow-up questions in an interactive chat interface.
+Unlike traditional static dictionaries, AI Dict operates on a **dual-track architecture**:
+1. **Instant Offline Machine Translation:** Powered by Meta's NLLB-200 running locally on your CPU via CTranslate2 — sub-second, zero-cost, completely offline translation across 200+ languages.
+2. **Deep LLM Inquiry:** Powered by leading AI models (Claude 3.5/3.7, DeepSeek R1/V3, GPT-4o, or local Ollama) — exhaustive etymology, cultural register, grammar breakdowns, and multi-turn follow-up conversations.
 
-## Features
+All data is stored locally in your private SQLite database. Zero telemetry. Zero accounts. Zero cloud lock-in.
 
-*   **Intelligent Word Search:** Get comprehensive explanations for any word in any language, including pronunciation, etymology, and example sentences.
-*   **Word Comparison:** Compare two or more words to understand their subtle differences in meaning, register, and usage contexts.
-*   **Text Explanation:** Paste a sentence or paragraph to get a breakdown of grammar, vocabulary, and meaning.
-*   **Follow-up Chat:** Chat with the AI directly within a search result to ask follow-up questions or clarify doubts.
-*   **Study Sessions & History:** Automatically groups your searches by day or by active "Study Session", allowing you to track and manage what you learn.
-*   **Interactive UI:** Modern React frontend with dark mode support, horizontal tab scrolling, and a seamless "Hover Review" system that lets you peek at past searches instantly.
-*   **External Integrations:** Configure dynamic links to external dictionaries (like Wiktionary or Cambridge) based on the detected language.
-*   **Local Data Privacy:** All history and chat data is stored locally in an SQLite database on your machine.
-*   **Customizable AI:** Configure the system prompt, main LLM, and fallback LLMs via the Settings panel.
+---
 
-## Architecture
+## ✨ Feature Matrix
 
-*   **Backend:** Python 3.11+, FastAPI, SQLModel, Uvicorn.
-*   **Frontend:** React, Vite, TailwindCSS, Lucide Icons.
-*   **Database:** SQLite.
-*   **AI Integration:** OpenRouter API (supports any model like GPT-4o, Claude 3.5 Sonnet, DeepSeek, Llama 3, etc.).
+| Mode / Feature | Description | Engine / Model |
+|---|---|---|
+| **Intelligent Word Search** | Deep, contextual word explanations: etymology, connotations, collocations, CEFR levels, and example sentences. | OpenRouter LLM / Ollama |
+| **Word Comparison** | Compare 2+ words side-by-side to understand nuanced differences in tone, formality, and usage constraints. | OpenRouter LLM / Ollama |
+| **Text Explanation** | Paste complex sentences or literary excerpts for full grammatical breakdowns, idioms, and syntax parsing. | OpenRouter LLM / Ollama |
+| **Conceptual Translation** | Nuanced, culturally accurate translations explaining tone, idioms, and contextual alternatives. | OpenRouter LLM / Ollama |
+| **Offline Machine Translation** | Instant dual-box MT (Google Translate style). Fast, free, runs on CPU, fully offline. Editable translations with auto-save. | CTranslate2 + NLLB-200 (int8) |
+| **Spaced Repetition Flashcards** | Review vocabulary decks with active recall. 1-col/2-col layouts, instant vs. 3D flip animations, fullscreen mode, keyboard controls. | Native React UI + SQLite |
+| **Text Correction & Polish** | Proofread and edit text with detailed grammatical explanations, style suggestions, and translation comparisons. | OpenRouter LLM / Ollama |
+| **Browser Extension (MV3)** | Definer replacement. Instant text selection bubble, double-click lookup, YouTube/Netflix subtitle piercing, and 1-click MT/LLM toggling. | Manifest V3 (Shadow DOM) |
+| **Follow-up Chat** | Ask the AI follow-up questions directly inside any search, comparison, or explanation result with full context retention. | OpenRouter / Ollama Streaming |
+| **Profiles & Study Sessions** | Separate learning contexts (e.g., "German C1", "Medical Spanish"). Temporal session grouping (`YYYY-MM-DD` or named units). | Scoped SQLite Tables |
+| **Color Tags & Star Ratings** | Color bookmarks (Red, Orange, Yellow, Green, Blue) and 1–5 star ratings for vocabulary curation and flashcard filtering. | SQLite Metadata |
+| **Dynamic Hover Preview** | Hover over any history item in the sidebar to view its full Markdown explanation in a resizable floating popup. | Fixed Viewport Clamped UI |
+| **External Dictionary Links** | Dynamic link buttons to Cambridge, LEO, Duden, Wiktionary, etc., populated automatically with detected language and lemma. | Configurable URL Templates |
+| **1-Click Backup & Restore** | Export and import your entire SQLite database and configuration as a timestamped `.zip` archive. | Native ZIP Streaming |
 
-## Installation
+---
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/yourusername/ai_dict.git
-    cd ai_dict
-    ```
+## 🏛️ Architecture Overview
 
-2.  **Install the backend (using `uv` or `pip`):**
-    ```bash
-    uv pip install -e .
-    # OR
-    pip install -e .
-    ```
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        User Client Layer                               │
+├───────────────────────────────────┬────────────────────────────────────┤
+│         Browser Extension         │          React SPA Web UI          │
+│   (Manifest V3, Shadow DOM)       │     (Vite, TailwindCSS 4, SPA)     │
+│   - Simple MT Card (Instant)      │     - Search, Compare, Explain     │
+│   - Full Feature LLM Assistant    │     - Offline MT, Correction       │
+│   - Video & Subtitle Piercing     │     - Flashcards Deck & Settings   │
+└─────────────────┬─────────────────┴──────────────────┬─────────────────┘
+                  │                                    │
+                  │ HTTP REST API (Port 4321)          │ HTTP REST API
+                  ▼                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                  FastAPI Backend Server (Python 3.11+)                 │
+│  - server.py: Fat Controller, Endpoints, Request Validation, Static UI │
+├─────────────────────────┬────────────────────────────┬─────────────────┤
+│    Offline MT Engine    │      AI & LLM Client       │ Database Engine │
+│         (mt.py)         │          (ai.py)           │     (db.py)     │
+│  - CTranslate2 (CPU)    │  - OpenRouter API          │  - SQLModel     │
+│  - NLLB-200 (int8)      │  - Reasoning Effort        │  - SQLite Local │
+│  - Flores-200 Mapping   │  - Local Ollama Fallback   │  - Profile Scope│
+│  - Langdetect / Scripts │  - Prompt Injection Guard  │  - Backup/Export│
+└─────────────────────────┴────────────────────────────┴─────────────────┘
+```
 
-3.  **Build the frontend:**
-    ```bash
-    cd frontend
-    npm install
-    npm run build
-    cd ..
-    ```
+- **Backend:** Python 3.10+ (tested on 3.11+), FastAPI, SQLModel, Uvicorn, CTranslate2, Tokenizers, SentencePiece.
+- **Frontend:** React 19, Vite 8, TailwindCSS 4, Lucide React, react-markdown.
+- **Database:** Local SQLite file (`~/.local/share/ai_dict/ai_dict.db` on Linux).
+- **Extension:** Chrome Manifest V3, Shadow DOM style encapsulation, deep selection traversal.
 
-4.  **Run the application:**
-    ```bash
-    ai_dict
-    ```
-    This will start the FastAPI server on `http://127.0.0.1:4321`. Open this URL in your browser.
+---
 
-## Configuration
+## 🚀 Installation & Setup
 
-When you first launch the app, go to the **Settings** tab (the gear icon) to configure:
-- **OpenRouter API Key:** Required for the AI to function.
-- **Main Model:** The primary model used for lookups (e.g., `anthropic/claude-3.5-sonnet`).
-- **Chat/Compare Models:** Specific models used for chats or heavy comparison tasks.
-- **System Prompts:** Customize how the AI formats its responses.
+### Prerequisites
+- Python 3.10 or higher (Python 3.11+ recommended)
+- Node.js 18+ (tested on Node 20+)
+- `uv` (recommended) or `pip`
 
-## License
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/yourusername/ai_dict.git
+cd ai_dict
+```
 
-This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+### Step 2: Install Python Backend Dependencies
+Using `uv` (recommended):
+```bash
+uv pip install -e .
+```
+Or standard `pip`:
+```bash
+pip install -e .
+```
+
+### Step 3: Build the Frontend Static Assets
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+*Note: The FastAPI backend serves the pre-compiled assets from `src/ai_dict/static/`.*
+
+### Step 4: Launch AI Dict
+```bash
+ai_dict
+```
+Open your browser and navigate to:
+```
+http://127.0.0.1:4321
+```
+
+---
+
+## 🧩 Installing the Chrome Extension
+
+AI Dict includes a powerful companion Chrome Extension that brings instant lookups and subtitle translation to any webpage, YouTube video, or HTML5 player:
+
+1. Open Chrome / Brave / Edge and navigate to `chrome://extensions/`.
+2. Toggle on **Developer mode** in the top-right corner.
+3. Click **Load unpacked** and select the `extension/` directory inside this repository.
+4. Pin the **AI Dict** icon to your browser toolbar.
+5. Highlight any text on any page or video to trigger the floating lookup bubble!
+
+> For full extension documentation, keyboard shortcuts, and video configuration, see [extension/README.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/extension/README.md).
+
+---
+
+## ⚙️ Initial Configuration
+
+On your first launch, click the **Settings** gear icon (⚙️) in the sidebar:
+
+1. **OpenRouter API Key:** Enter your OpenRouter API key (get one at [openrouter.ai](https://openrouter.ai)).
+2. **Model Selection:** Select your preferred primary LLM (e.g., `deepseek/deepseek-v4-flash-0731` or `anthropic/claude-3.5-sonnet`).
+3. **Reasoning Effort:** Configure thinking budgets per mode (`none`, `low`, `medium`, `high`, `max`).
+4. **Offline MT Engine:** The NLLB-200 600M model (~600MB) will automatically download on your first MT lookup. You can also click "Download Model" in Settings.
+5. **Local Ollama Fallback (Optional):** Enable Ollama fallback if you want local LLM capability when offline.
+
+---
+
+## 📚 Documentation Index
+
+For comprehensive documentation, consult the dedicated guides:
+
+- [DESIGN.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/DESIGN.md) — Architectural philosophy, design principles, dual-track MT/LLM strategy, security considerations, and trade-offs.
+- [TECHNICAL_SPECS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/TECHNICAL_SPECS.md) — Complete technical specification, SQLite database schema, REST API catalog, CTranslate2 threading details, and frontend state machine.
+- [AGENTS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/AGENTS.md) — Operational guidelines for AI coding agents and human contributors, build contracts, database migration protocols, and common pitfalls.
+- [extension/README.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/extension/README.md) — Browser extension architecture, YouTube/Netflix subtitle piercing, event shielding, and usage guide.
+- [ANDROID_PORT_SPECS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/ANDROID_PORT_SPECS.md) — Architectural specification for future Android mobile porting.
+
+---
+
+## 📄 License
+
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.

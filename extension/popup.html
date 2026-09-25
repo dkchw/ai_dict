@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Dict</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body class="theme-tokyonight" id="popup-body">
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="header-brand">
+        <img src="icons/icon32.png" class="brand-icon" alt="AI Dict" />
+        <span class="brand-title">AI Dict</span>
+        <span class="shortcut-badge" id="header-shortcut-badge" title="Shortcut to open this popup: Alt+Shift+D (customize in settings)">Alt+Shift+D</span>
+        <span class="status-indicator" id="status-indicator" title="Checking server status..."></span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="open-app-btn" title="Open AI Dict App">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </button>
+        <button class="icon-btn" id="open-options-btn" title="Settings & External Sites">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Quick Temporary Pause / Resume Control -->
+    <div class="pause-status-bar" id="pause-status-bar">
+      <div class="pause-status-left">
+        <span class="pause-status-dot" id="pause-status-dot"></span>
+        <span class="pause-status-text" id="pause-status-text">Extension Active</span>
+      </div>
+      <div class="pause-actions-group" id="pause-actions-group">
+        <button type="button" class="pause-quick-btn" id="pause-15m-btn" title="Pause for 15 minutes">15m</button>
+        <button type="button" class="pause-quick-btn" id="pause-1h-btn" title="Pause for 1 hour">1h</button>
+        <button type="button" class="pause-toggle-btn" id="pause-toggle-btn" title="Pause or Resume Extension">Pause</button>
+      </div>
+    </div>
+
+    <!-- Quick Persistent Floating Window Toggle & Activate -->
+    <div class="persistent-status-bar" id="persistent-status-bar">
+      <div class="persistent-status-left">
+        <span class="persistent-icon">📌</span>
+        <span class="persistent-text">Persistent Window</span>
+      </div>
+      <div class="persistent-actions-group" id="persistent-actions-group">
+        <button type="button" class="persistent-activate-btn" id="activate-persistent-btn" title="Activate and open persistent floating window immediately on this webpage">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          <span>Activate</span>
+        </button>
+        <button type="button" class="persistent-toggle-btn" id="toggle-persistent-btn" title="Toggle Persistent Window mode: keep floating card open across lookups without closing on outside click">
+          <span class="persistent-dot" id="persistent-dot"></span>
+          <span class="persistent-btn-text" id="persistent-btn-text">OFF</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Persistent New Tab While Loading Toggle -->
+    <div class="persistent-status-bar" id="persistent-newtab-status-bar" style="margin-top: 4px;">
+      <div class="persistent-status-left">
+        <span class="persistent-icon">📑</span>
+        <span class="persistent-text" title="Open new tab inside persistent window if prior word is still generating">New Tab If Loading</span>
+      </div>
+      <div class="persistent-actions-group" id="persistent-newtab-actions-group">
+        <button type="button" class="persistent-toggle-btn" id="toggle-persistent-newtab-btn" title="Toggle New Tab While Loading: ON opens a new tab in persistent window; OFF replaces current search">
+          <span class="persistent-dot" id="persistent-newtab-dot"></span>
+          <span class="persistent-btn-text" id="persistent-newtab-btn-text">OFF</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Site Status & Quick 1-Click Toggle -->
+    <div class="site-status-bar" id="site-status-bar" style="display:none;">
+      <div class="site-status-left">
+        <span class="site-status-dot" id="site-status-dot"></span>
+        <span class="site-domain-label" id="site-domain-label">Detecting...</span>
+      </div>
+      <button type="button" id="toggle-site-btn" class="site-toggle-btn" title="Toggle AI Dict on this site">
+        Active (Disable)
+      </button>
+    </div>
+
+    <!-- Profile Selector Card -->
+    <div class="section-card">
+      <div class="section-title-row">
+        <span class="section-label">Active Profile</span>
+        <span class="active-badge" id="active-profile-badge">Profile 1</span>
+      </div>
+      <select id="profile-select" class="form-select">
+        <option value="1">Loading profiles...</option>
+      </select>
+      <div class="field-hint">
+        Lookups automatically save here using this profile's independent prompt & model.
+      </div>
+    </div>
+
+    <!-- Quick Search Input with Mode Selection -->
+    <div class="section-card">
+      <div class="search-mode-pills" id="search-mode-pills">
+        <button type="button" class="search-mode-pill active" data-mode="machine_translation" title="Offline Machine Translation (NLLB)">⚡ MT</button>
+        <button type="button" class="search-mode-pill" data-mode="search" title="Word lookup & definition mode">🔍 Word (LLM)</button>
+        <button type="button" class="search-mode-pill" data-mode="explain" title="Sentence or concept explanation mode">📖 Explain (LLM)</button>
+        <button type="button" class="search-mode-pill" data-mode="translation" title="Translation mode">🌐 Translate (LLM)</button>
+        <button type="button" class="search-mode-pill" data-mode="compare" title="Word/concept comparison mode">⚖️ Compare (LLM)</button>
+        <button type="button" class="search-mode-pill" data-mode="correction" title="Grammar correction & natural translation mode">✍️ Correct (LLM)</button>
+      </div>
+      <form id="quick-search-form" class="search-form">
+        <input type="text" id="quick-search-input" class="search-input" placeholder="Type a word to define & save..." />
+        <button type="submit" class="search-btn" id="quick-search-btn" title="Look up & open on page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+      </form>
+      <!-- Language / Mode Type row for Translation & Correction -->
+      <div id="popup-lang-row" style="display:none; margin-top:8px; align-items:center; gap:6px; font-size:11px;">
+        <button type="button" class="form-select-sm" id="popup-modetype-btn" style="display:none; cursor:pointer; font-weight:600; padding:2px 8px;" title="Toggle between Correction Only and Correction + Translation">
+          <span id="popup-modetype-label">Correction + Translation</span>
+        </button>
+        <div id="popup-lang-selectors" style="display:inline-flex; align-items:center; gap:4px;">
+          <select id="popup-src-lang-select" class="form-select-sm" style="max-width:85px;" title="Source Language"></select>
+          <button type="button" id="popup-swap-lang-btn" class="form-select-sm" style="cursor:pointer; padding:2px 6px;" title="Swap languages">⇄</button>
+          <select id="popup-tgt-lang-select" class="form-select-sm" style="max-width:85px;" title="Target Language"></select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Lookup Result Box (Hidden by default) -->
+    <div id="quick-result-box" class="section-card result-card" style="display:none;">
+      <div class="result-header" style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+          <span class="result-term" id="result-term"></span>
+          <span class="result-badge" id="result-lang"></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+          <button type="button" class="form-select-sm" id="popup-open-page-btn" title="Open full floating dictionary window on this page" style="display:none; cursor:pointer; align-items:center; gap:4px; padding:2px 8px; font-size:11px;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            <span>On Page</span>
+          </button>
+          <div class="popup-move-container" style="position:relative;">
+            <button type="button" class="form-select-sm popup-move-btn" id="popup-move-btn" title="Move to another mode & regenerate" style="display:none; cursor:pointer; align-items:center; gap:3px; padding:2px 8px; font-size:11px;">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+              <span>Move ▾</span>
+            </button>
+            <div id="popup-move-menu" class="popup-move-menu" style="display:none;">
+              <button type="button" class="popup-move-opt" data-to="search">🔍 Move to Word</button>
+              <button type="button" class="popup-move-opt" data-to="explain">📖 Move to Explain</button>
+              <button type="button" class="popup-move-opt" data-to="translation">🌐 Move to Translate</button>
+              <button type="button" class="popup-move-opt" data-to="compare">⚖️ Move to Compare</button>
+              <button type="button" class="popup-move-opt" data-to="correction">✍️ Move to Correct</button>
+            </div>
+          </div>
+          <button type="button" class="form-select-sm popup-del-btn" id="popup-delete-btn" title="Delete from history" style="display:none; cursor:pointer; align-items:center; gap:3px; padding:2px 6px; font-size:11px; color:#ef4444;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+        </div>
+      </div>
+      <div class="result-content" id="result-content"></div>
+      <div id="popup-mt-footer" style="display:none; margin-top:10px; padding-top:8px; border-top:1px solid rgba(125,125,125,0.15);">
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          <button type="button" class="btn btn-secondary" id="popup-mt-regenerate-btn" style="flex:1; display:inline-flex; align-items:center; justify-content:center; gap:5px; font-size:11.5px; font-weight:600; padding:5px 10px; cursor:pointer;" title="Regenerate translation from source text">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            <span>Regenerate</span>
+          </button>
+        </div>
+        <button type="button" class="btn btn-secondary" id="popup-return-llm-btn" style="width:100%; display:inline-flex; align-items:center; justify-content:center; gap:6px; font-size:12px; font-weight:700; color:#c084fc; background:rgba(147,51,234,0.15); border:1px solid rgba(147,51,234,0.35); cursor:pointer;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+          <span>✨ Switch to Full Feature (LLM Mode)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Trigger Settings -->
+    <div class="section-card">
+      <div class="section-title-row">
+        <span class="section-label">Lookup Trigger</span>
+      </div>
+      <div class="trigger-modes">
+        <label class="radio-label">
+          <input type="radio" name="triggerMode" value="bubble" id="trig-bubble" />
+          <span>Floating Bubble (Definer icon on select)</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="triggerMode" value="auto" id="trig-auto" />
+          <span>Auto-Popup on Selection</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="triggerMode" value="key" id="trig-key" />
+          <span>Modifier Key + Selection</span>
+        </label>
+      </div>
+
+      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(125,125,125,0.15);">
+        <label class="radio-label" style="font-weight: 500;">
+          <input type="checkbox" id="double-click-lookup" checked />
+          <span>Double-click word to query directly</span>
+        </label>
+      </div>
+
+      <div class="row-flex" id="modifier-row" style="margin-top: 8px;">
+        <span class="small-label">Key:</span>
+        <select id="modifier-select" class="form-select-sm">
+          <option value="none">None</option>
+          <option value="alt">Alt</option>
+          <option value="ctrl">Ctrl / Cmd</option>
+          <option value="shift">Shift</option>
+        </select>
+        <span class="small-label" style="margin-left:auto;">Theme:</span>
+        <select id="theme-select" class="form-select-sm">
+          <option value="tokyonight">Tokyo Night</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Recent History in Active Profile -->
+    <div class="section-card" id="recent-words-section">
+      <div class="section-title-row" style="margin-bottom: 6px;">
+        <span class="section-label">Recent History</span>
+        <button class="text-btn" id="refresh-recent-btn">Refresh</button>
+      </div>
+      <div class="search-mode-pills" id="recent-history-mode-pills" style="margin-bottom: 8px;">
+        <button type="button" class="search-mode-pill active" data-mode="machine_translation" title="Offline Machine Translation (NLLB)">⚡ MT</button>
+        <button type="button" class="search-mode-pill" data-mode="search">🔍 Word</button>
+        <button type="button" class="search-mode-pill" data-mode="explain">📖 Explain</button>
+        <button type="button" class="search-mode-pill" data-mode="translation">🌐 Translate</button>
+        <button type="button" class="search-mode-pill" data-mode="compare">⚖️ Compare</button>
+        <button type="button" class="search-mode-pill" data-mode="correction">✍️ Correct</button>
+      </div>
+      <div class="recent-list" id="recent-words-list">
+        <div class="empty-state">Loading recent history...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

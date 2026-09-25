@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Dict Extension Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body class="theme-tokyonight" id="options-body">
+  <div class="options-layout">
+    <!-- Sidebar -->
+    <aside class="options-sidebar">
+      <div class="sidebar-brand">
+        <img src="icons/icon48.png" class="brand-logo" alt="AI Dict" />
+        <div>
+          <h1 class="brand-name">AI Dict</h1>
+          <div class="brand-sub">Extension Settings</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#server" class="nav-link active" data-tab="server">🔌 Server & Profiles</a>
+        <a href="#triggers" class="nav-link" data-tab="triggers">⚡ Triggers & Behavior</a>
+        <a href="#domains" class="nav-link" data-tab="domains">🌐 Domains & Blacklist</a>
+        <a href="#external-sites" class="nav-link" data-tab="external-sites">📖 External Sites (Definer)</a>
+        <a href="#appearance" class="nav-link" data-tab="appearance">🎨 Appearance</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-primary w-full" id="open-app-link">Open AI Dict Web App</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="options-content">
+      <div class="save-toast" id="save-toast">Settings saved successfully!</div>
+
+      <!-- Section: Server & Profiles -->
+      <section class="tab-panel active" id="panel-server">
+        <div class="panel-header">
+          <h2>Server & Profile Configuration</h2>
+          <p>Configure connection to your local or remote AI Dict server and manage active profiles.</p>
+        </div>
+
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="server-url">AI Dict Backend URL</label>
+            <div class="input-with-button">
+              <input type="text" id="server-url" class="form-control" placeholder="http://127.0.0.1:4321" />
+              <button class="btn btn-secondary" id="test-connection-btn">Test Connection</button>
+            </div>
+            <div class="form-hint">Default is <code>http://127.0.0.1:4321</code> when running <code>ai_dict serve</code> locally.</div>
+            <div id="connection-status-msg" class="status-msg" style="display:none;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="active-profile-select">Default / Active Profile</label>
+            <select id="active-profile-select" class="form-control">
+              <option value="1">Loading profiles from AI Dict...</option>
+            </select>
+            <div class="form-hint" style="margin-top:6px;">
+              <strong>Independent Prompts & Models:</strong> Words or sentences looked up through the Chrome extension will automatically use the prompt, AI model, reasoning budget, and languages configured for this profile in AI Dict Settings, and will be saved directly into this profile's history.
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top:14px;">
+            <label class="form-label" for="active-session-id">Active Session (Optional)</label>
+            <input type="text" id="active-session-id" class="form-control" placeholder="e.g. Chapter 4, Morning Reading..." />
+            <div class="form-hint">If set, lookups will be tagged with this session name for easy filtering in AI Dict.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Triggers & Behavior -->
+      <section class="tab-panel" id="panel-triggers">
+        <div class="panel-header">
+          <h2>Triggers & Interaction</h2>
+          <p>Control how and when the AI Dict popup card appears on web pages.</p>
+        </div>
+
+        <div class="card">
+          <div class="form-group" style="margin-bottom:18px;">
+            <label class="form-label" for="opt-default-mode">Default Lookup Action</label>
+            <select id="opt-default-mode" class="form-control" style="max-width:420px;">
+              <option value="machine_translation" selected>⚡ Simple Machine Translate (Google Translate style, no memory - Default)</option>
+              <option value="search">✨ Full Feature AI Dict (Word Mode - LLM)</option>
+              <option value="explain">📖 Explain (LLM)</option>
+              <option value="translation">🌐 Translation (LLM)</option>
+              <option value="correction">✍️ Correction (LLM)</option>
+              <option value="compare">⚖️ Compare (LLM)</option>
+            </select>
+            <div class="form-hint" style="margin-top:6px;">
+              <strong>Simple Machine Translate (Default):</strong> Lightweight Google Translate-style popup powered by offline Meta NLLB-200 (Standard 600M). Zero database memory / history saving. You can switch to Full Feature Mode anytime with 1 click.
+            </div>
+          </div>
+
+          <label class="form-label">Selection Trigger Mode</label>
+          <div class="radio-cards">
+            <label class="radio-card">
+              <input type="radio" name="optTriggerMode" value="bubble" id="opt-trig-bubble" />
+              <div class="radio-card-body">
+                <div class="radio-title">Floating Bubble (Definer Style)</div>
+                <div class="radio-desc">Selecting text shows a small floating icon near the cursor. Clicking it opens the AI Dict card directly at the word.</div>
+              </div>
+            </label>
+
+            <label class="radio-card">
+              <input type="radio" name="optTriggerMode" value="auto" id="opt-trig-auto" />
+              <div class="radio-card-body">
+                <div class="radio-title">Automatic Popup on Selection</div>
+                <div class="radio-desc">Immediately opens the AI Dict card as soon as you select any word or phrase.</div>
+              </div>
+            </label>
+
+            <label class="radio-card">
+              <input type="radio" name="optTriggerMode" value="key" id="opt-trig-key" />
+              <div class="radio-card-body">
+                <div class="radio-title">Modifier Key + Selection</div>
+                <div class="radio-desc">Only triggers when you hold a specific key (Alt, Ctrl, Shift) while selecting text.</div>
+              </div>
+            </label>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:16px; padding:10px 12px; background:rgba(125,125,125,0.08); border-radius:8px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-double-click-lookup" />
+              <span><strong>Double-Click Word to Query:</strong> Double-clicking any single word queries it automatically without displaying the selection icon first.</span>
+            </label>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:10px; padding:10px 12px; background:rgba(125,125,125,0.08); border-radius:8px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-persistent-window" />
+              <span><strong>Default Persistent Window Mode:</strong> Keep the floating card open by default across lookups on newly opened tabs. (Persistent mode can also be toggled dynamically per-tab via the pin icon on the floating card or popup).</span>
+            </label>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:10px; margin-left:20px; padding:10px 12px; background:rgba(125,125,125,0.05); border-left:3px solid #3b82f6; border-radius:0 8px 8px 0;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-persistent-newtab" />
+              <span><strong>Open New Tab If Previous Word Still Loading:</strong> When persistent window mode is active and you look up another word while the current word is still generating, open it in a concurrent tab inside the floating window instead of replacing the current lookup.</span>
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-top:16px;">
+            <label class="form-label" for="opt-modifier-key">Modifier Key</label>
+            <select id="opt-modifier-key" class="form-control" style="max-width:240px;">
+              <option value="none">None (Always trigger)</option>
+              <option value="alt">Alt / Option</option>
+              <option value="ctrl">Ctrl / Cmd</option>
+              <option value="shift">Shift</option>
+            </select>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:14px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-auto-detect-sentence" />
+              <span><strong>Auto-Detect Sentences:</strong> Automatically switch to <em>Explain Mode</em> when selecting phrases with more than 3 words or punctuation.</span>
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-top:14px;">
+            <label class="form-label" for="opt-card-placement">Card Display Placement (Never Hide Word)</label>
+            <select id="opt-card-placement" class="form-control">
+              <option value="auto">✨ Smart Auto (Next to word on Right/Left, or Downward/Upward)</option>
+              <option value="side">👉 Next to Word First (Right or Left side)</option>
+              <option value="below">👇 Downward First (Below the word)</option>
+              <option value="above">👆 Upward First (Above the word)</option>
+            </select>
+            <div class="form-hint">
+              Intelligently chooses the best side so the popup never covers or hides the word you selected.
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top:18px; padding-top:14px; border-top:1px solid rgba(125,125,125,0.15);">
+            <label class="form-label">Remembered Popup Window Size</label>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+              <span id="size-display" class="preset-chip" style="font-size:13px; padding:5px 12px;">440 × 520 px</span>
+              <button type="button" class="btn btn-secondary" id="reset-size-btn">Reset to Default Size (440×520)</button>
+            </div>
+            <div class="form-hint" style="margin-top:4px;">
+              You can resize the card window anytime on any web page by dragging its corners or edges. AI Dict automatically remembers your preferred size.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <label class="form-label" style="margin-bottom:0;">⌨️ Keyboard Shortcuts</label>
+            <button type="button" class="btn btn-secondary" id="manage-shortcuts-btn" style="font-size:12px; padding:4px 10px;">
+              ⚙️ Customize in Browser
+            </button>
+          </div>
+          <p style="font-size:12.5px; opacity:0.8; margin-bottom:14px;">
+            Quickly trigger AI Dict features from any web page without clicking.
+          </p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:rgba(125,125,125,0.06); border-radius:8px; border:1px solid rgba(125,125,125,0.12);">
+              <div>
+                <div style="font-weight:600; font-size:13px;">Quick Action Popup</div>
+                <div style="font-size:12px; opacity:0.7;">Open the toolbar popup to type a word, choose mode (Word / Explain / Translate), or review recent history.</div>
+              </div>
+              <kbd style="background:rgba(125,125,125,0.18); border:1px solid rgba(125,125,125,0.3); border-radius:6px; padding:3px 8px; font-size:12px; font-weight:bold; font-family:inherit;">Alt + Shift + D</kbd>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:rgba(125,125,125,0.06); border-radius:8px; border:1px solid rgba(125,125,125,0.12);">
+              <div>
+                <div style="font-weight:600; font-size:13px;">Toggle Floating Card on Webpage</div>
+                <div style="font-size:12px; opacity:0.7;">Open or toggle the draggable floating card on the active page for selected text or last query.</div>
+              </div>
+              <kbd style="background:rgba(125,125,125,0.18); border:1px solid rgba(125,125,125,0.3); border-radius:6px; padding:3px 8px; font-size:12px; font-weight:bold; font-family:inherit;">Alt + D</kbd>
+            </div>
+          </div>
+          <div class="form-hint" style="margin-top:10px;">
+            Shortcuts can be customized anytime in your browser's extension shortcuts manager (<code>chrome://extensions/shortcuts</code>).
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label class="form-label" style="margin-bottom:0;">Website Domain Controls</label>
+              <a href="#domains" class="text-btn nav-switch-link" data-target="domains" style="font-size:12px; text-decoration:underline;">Manage Disabled Domains &rarr;</a>
+            </div>
+            <div class="form-hint" style="margin-top:6px;">AI Dict is enabled on all websites by default (including ChatGPT). Go to the <strong>Domains & Blacklist</strong> tab to configure specific domains.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Domains & Blacklist -->
+      <section class="tab-panel" id="panel-domains">
+        <div class="panel-header">
+          <h2>Domain & Website Configuration</h2>
+          <p>Control which websites AI Dict runs on. By default, AI Dict is active on <strong>all websites</strong> (including ChatGPT, Wikipedia, Google, etc.).</p>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+            <label class="form-label" style="margin-bottom:0;">Disabled / Blacklisted Domains</label>
+            <span class="active-badge" style="background:rgba(34,197,94,0.15); color:#22c55e; border:1px solid rgba(34,197,94,0.3); font-size:11px; padding:3px 8px; border-radius:6px;">
+              Active on all other domains
+            </span>
+          </div>
+
+          <p style="font-size:12.5px; opacity:0.8; margin-bottom:14px;">
+            The selection trigger bubble and lookup card will never appear on the domains listed below. You can easily add or remove domains at any time.
+          </p>
+
+          <!-- Domain Tags Chips -->
+          <div id="domain-chips-container" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; min-height:42px; padding:10px; background:rgba(125,125,125,0.06); border-radius:8px; border:1px solid rgba(125,125,125,0.18);">
+            <!-- Populated via JS -->
+          </div>
+
+          <!-- Add Domain Input Row -->
+          <div class="input-with-button" style="margin-bottom:12px;">
+            <input type="text" id="add-domain-input" class="form-control" placeholder="Type a domain (e.g. docs.google.com, overleaf.com)..." />
+            <button type="button" class="btn btn-primary" id="add-domain-btn">+ Add Domain</button>
+          </div>
+
+          <!-- Quick Preset Suggestions -->
+          <div style="margin-top:14px;">
+            <span style="font-size:12px; opacity:0.7; margin-right:8px;">Common Blacklist Suggestions:</span>
+            <div class="preset-chips" style="display:inline-flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+              <button type="button" class="preset-chip domain-preset-btn" data-domain="docs.google.com">+ docs.google.com</button>
+              <button type="button" class="preset-chip domain-preset-btn" data-domain="sheets.google.com">+ sheets.google.com</button>
+              <button type="button" class="preset-chip domain-preset-btn" data-domain="github.com/codespaces">+ github.com/codespaces</button>
+            </div>
+          </div>
+
+          <!-- ChatGPT Verified Banner -->
+          <div style="margin-top:16px; padding:10px 14px; background:rgba(34,197,94,0.1); border-left:3px solid #22c55e; border-radius:6px; font-size:12.5px; display:flex; align-items:center; gap:8px;">
+            <span style="color:#22c55e; font-weight:bold;">✓</span>
+            <span><strong>chatgpt.com</strong> is fully enabled. AI Dict runs seamlessly on ChatGPT with zero style leakage or interference.</span>
+          </div>
+
+          <!-- Raw Textarea for bulk editing -->
+          <div class="form-group" style="margin-top:18px; padding-top:14px; border-top:1px solid rgba(125,125,125,0.15);">
+            <label class="form-label" for="opt-blacklist">Bulk Domain Editor (One domain per line)</label>
+            <textarea id="opt-blacklist" class="form-control" rows="3" placeholder="docs.google.com&#10;sheets.google.com"></textarea>
+            <div class="form-hint">Edits here automatically sync with the domain chips above.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <label class="form-label">Domain Status Checker</label>
+          <div class="input-with-button">
+            <input type="text" id="test-domain-input" class="form-control" placeholder="Check a domain (e.g. chatgpt.com, wikipedia.org)..." />
+            <button type="button" class="btn btn-secondary" id="test-domain-btn">Check Status</button>
+          </div>
+          <div id="test-domain-result" style="margin-top:10px; font-size:12.5px; display:none;"></div>
+        </div>
+      </section>
+
+      <!-- Section: External Sites (Definer Manager) -->
+      <section class="tab-panel" id="panel-external-sites">
+        <div class="panel-header">
+          <div class="flex-between">
+            <div>
+              <h2>External Sites & Dictionaries (Definer Feature)</h2>
+              <p>Configure external dictionary search engines with <code>{{str}}</code> or <code>{word}</code> placeholders.</p>
+            </div>
+            <div class="actions-row">
+              <button class="btn btn-secondary" id="sync-templates-btn" title="Sync external dictionaries from AI Dict backend">🔄 Sync from AI Dict</button>
+              <button class="btn btn-primary" id="add-site-btn">+ Add Custom Site</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Preset Buttons -->
+        <div class="card">
+          <label class="form-label">Add Popular Dictionaries (1-Click):</label>
+          <div class="preset-chips" id="preset-chips">
+            <button class="preset-chip" data-preset="cambridge">+ Cambridge (EN)</button>
+            <button class="preset-chip" data-preset="leo">+ LEO (DE)</button>
+            <button class="preset-chip" data-preset="duden">+ Duden (DE)</button>
+            <button class="preset-chip" data-preset="wiktionary">+ Wiktionary (All)</button>
+            <button class="preset-chip" data-preset="deepl">+ DeepL (All)</button>
+            <button class="preset-chip" data-preset="google">+ Google Translate (All)</button>
+            <button class="preset-chip" data-preset="wordreference">+ WordReference (All)</button>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:16px; padding:10px 12px; background:rgba(125,125,125,0.08); border-radius:8px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-external-overlay" />
+              <span><strong>Show Embedding Restriction Warning Overlay:</strong> Display an overlay message (&ldquo;If embedding is restricted: Open in Browser Tab&rdquo;) over external dictionary embeds. (Default: Off)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- External Sites List -->
+        <div class="card" style="padding:0; overflow:hidden;">
+          <table class="sites-table">
+            <thead>
+              <tr>
+                <th style="width:40px;">Icon</th>
+                <th style="width:140px;">Name</th>
+                <th style="width:80px;">Lang</th>
+                <th>URL Template</th>
+                <th style="width:100px; text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="external-sites-tbody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: Appearance -->
+      <section class="tab-panel" id="panel-appearance">
+        <div class="panel-header">
+          <h2>Appearance & Theme</h2>
+          <p>Customize the color scheme and styling of the floating popup card.</p>
+        </div>
+
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="opt-theme">Card Color Theme</label>
+            <select id="opt-theme" class="form-control" style="max-width:240px;">
+              <option value="tokyonight">Tokyo Night (Default)</option>
+              <option value="dark">Modern Dark</option>
+              <option value="light">Crisp Light</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Save Bar -->
+      <div class="bottom-bar">
+        <button class="btn btn-primary" id="save-all-btn">Save All Settings</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal for Add/Edit External Site -->
+  <div class="modal-overlay" id="site-modal" style="display:none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-title">Add External Dictionary Site</h3>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <form id="site-form" class="modal-body">
+        <input type="hidden" id="site-edit-id" />
+        <div class="form-group">
+          <label class="form-label" for="modal-site-name">Display Name *</label>
+          <input type="text" id="modal-site-name" class="form-control" placeholder="e.g. Cambridge Dictionary" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modal-site-url">URL Template *</label>
+          <input type="text" id="modal-site-url" class="form-control" placeholder="https://dictionary.cambridge.org/dictionary/english/{{str}}" required />
+          <div class="form-hint">Use <code>{{str}}</code> or <code>{word}</code> where the searched word should be inserted.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modal-site-lang">Language Filter</label>
+          <input type="text" id="modal-site-lang" class="form-control" placeholder="e.g. en, de, all" value="all" />
+          <div class="form-hint">Comma-separated ISO codes or language names. Use <code>all</code> to show for all languages.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modal-site-icon">Icon URL (Optional)</label>
+          <input type="text" id="modal-site-icon" class="form-control" placeholder="https://example.com/favicon.ico" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save External Site</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
