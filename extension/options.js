@@ -53,10 +53,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const activeProfileSelect = document.getElementById('active-profile-select');
   const activeSessionInput = document.getElementById('active-session-id');
   const optDefaultMode = document.getElementById('opt-default-mode');
+  const optSimpleLlmModel = document.getElementById('opt-simple-llm-model');
+  const optSimpleLlmPrompt = document.getElementById('opt-simple-llm-prompt');
   const optModifierKey = document.getElementById('opt-modifier-key');
   const optDoubleClickLookup = document.getElementById('opt-double-click-lookup');
   const optPersistentWindow = document.getElementById('opt-persistent-window');
   const optPersistentNewTab = document.getElementById('opt-persistent-newtab');
+  const optShowLlmModeInPopup = document.getElementById('opt-show-llm-mode-in-popup');
   const optAutoDetectSentence = document.getElementById('opt-auto-detect-sentence');
   const optCardPlacement = document.getElementById('opt-card-placement');
   const optExternalOverlay = document.getElementById('opt-external-overlay');
@@ -163,6 +166,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       await chrome.storage.local.set({ persistentNewTabOnLoading: e.target.checked });
       currentSettings.persistentNewTabOnLoading = e.target.checked;
       showToast(e.target.checked ? 'New Tab while loading enabled!' : 'New Tab while loading disabled!');
+    });
+  }
+
+  // Show LLM Mode bar in popup checkbox live change
+  if (optShowLlmModeInPopup) {
+    optShowLlmModeInPopup.addEventListener('change', async (e) => {
+      await chrome.storage.local.set({ showLlmModeInPopup: e.target.checked });
+      currentSettings.showLlmModeInPopup = e.target.checked;
+      showToast(e.target.checked ? 'Full LLM Mode switch shown in popup!' : 'Full LLM Mode switch hidden in popup!');
     });
   }
 
@@ -320,10 +332,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     serverUrlInput.value = currentSettings.serverUrl || 'http://127.0.0.1:4321';
     activeSessionInput.value = currentSettings.activeSessionId || '';
     if (optDefaultMode) optDefaultMode.value = currentSettings.defaultMode || 'machine_translation';
+    if (optSimpleLlmModel) optSimpleLlmModel.value = currentSettings.simpleLlmModel || 'inclusionai/ling-3.0-flash';
+    if (optSimpleLlmPrompt) optSimpleLlmPrompt.value = currentSettings.simpleLlmDefaultPrompt || 'quick_glance';
     optModifierKey.value = currentSettings.modifierKey || 'none';
     if (optDoubleClickLookup) optDoubleClickLookup.checked = currentSettings.doubleClickLookup !== false;
     if (optPersistentWindow) optPersistentWindow.checked = currentSettings.defaultPersistentWindow === true;
     if (optPersistentNewTab) optPersistentNewTab.checked = currentSettings.persistentNewTabOnLoading === true;
+    if (optShowLlmModeInPopup) optShowLlmModeInPopup.checked = currentSettings.showLlmModeInPopup !== false;
     optAutoDetectSentence.checked = currentSettings.autoDetectSentence !== false;
     if (optCardPlacement) optCardPlacement.value = currentSettings.cardPlacement || 'auto';
     if (optExternalOverlay) optExternalOverlay.checked = currentSettings.showExternalFallbackOverlay === true;
@@ -531,10 +546,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       activeProfileName: pName,
       activeSessionId: activeSessionInput.value.trim(),
       defaultMode: optDefaultMode ? optDefaultMode.value : 'machine_translation',
+      simpleLlmModel: (optSimpleLlmModel ? optSimpleLlmModel.value.trim() : '') || 'inclusionai/ling-3.0-flash',
+      simpleLlmDefaultPrompt: (optSimpleLlmPrompt ? optSimpleLlmPrompt.value : 'quick_glance'),
       triggerMode: trigVal,
       doubleClickLookup: optDoubleClickLookup ? optDoubleClickLookup.checked : true,
       defaultPersistentWindow: optPersistentWindow ? optPersistentWindow.checked : false,
       persistentNewTabOnLoading: optPersistentNewTab ? optPersistentNewTab.checked : false,
+      showLlmModeInPopup: optShowLlmModeInPopup ? optShowLlmModeInPopup.checked : true,
       modifierKey: optModifierKey.value,
       autoDetectSentence: optAutoDetectSentence.checked,
       cardPlacement: optCardPlacement ? optCardPlacement.value : 'auto',

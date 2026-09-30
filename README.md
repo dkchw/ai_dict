@@ -33,36 +33,36 @@ All data is stored locally in your private SQLite database. Zero telemetry. Zero
 
 ## 🏛️ Architecture Overview
 
-```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        User Client Layer                               │
-├───────────────────────────────────┬────────────────────────────────────┤
-│         Browser Extension         │          React SPA Web UI          │
-│   (Manifest V3, Shadow DOM)       │     (Vite, TailwindCSS 4, SPA)     │
-│   - Simple MT Card (Instant)      │     - Search, Compare, Explain     │
-│   - Full Feature LLM Assistant    │     - Offline MT, Correction       │
-│   - Video & Subtitle Piercing     │     - Flashcards Deck & Settings   │
-└─────────────────┬─────────────────┴──────────────────┬─────────────────┘
-                  │                                    │
-                  │ HTTP REST API (Port 4321)          │ HTTP REST API
-                  ▼                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                  FastAPI Backend Server (Python 3.11+)                 │
-│  - server.py: Fat Controller, Endpoints, Request Validation, Static UI │
-├─────────────────────────┬────────────────────────────┬─────────────────┤
-│    Offline MT Engine    │      AI & LLM Client       │ Database Engine │
-│         (mt.py)         │          (ai.py)           │     (db.py)     │
-│  - CTranslate2 (CPU)    │  - OpenRouter API          │  - SQLModel     │
-│  - NLLB-200 (int8)      │  - Reasoning Effort        │  - SQLite Local │
-│  - Flores-200 Mapping   │  - Local Ollama Fallback   │  - Profile Scope│
-│  - Langdetect / Scripts │  - Prompt Injection Guard  │  - Backup/Export│
-└─────────────────────────┴────────────────────────────┴─────────────────┘
+├───────────────────┬───────────────────┬────────────────────────────────┤
+│ Browser Extension │ React SPA Web UI  │   Native Android Mobile App    │
+│ (Manifest V3)     │ (React 19 / Vite) │  (Kotlin / Jetpack Compose)    │
+│ - Bubble & Card   │ - Multi-tab Modes │  - 24/7 Foreground Engine      │
+│ - Subtitle Pierce │ - Flashcards Deck │  - System Bubble & PROCESS_TEXT│
+│ - Instant MT/LLM  │ - Full Management │  - Google ML Kit On-Device MT  │
+└─────────┬─────────┴─────────┬─────────┴───────────────┬────────────────┘
+          │                   │                         │
+          │ HTTP REST API     │ HTTP REST API           │ Direct OkHttp / SSE
+          ▼                   ▼                         ▼
+┌───────────────────────────────────────┐   ┌────────────────────────────┐
+│ FastAPI Backend Server (Port 4321)    │   │ Android App Core (Local)   │
+│ - server.py: Fat Controller & SPA host│   │ - Room SQLite Database     │
+│ - mt.py: CTranslate2 + NLLB-200 (CPU) │   │ - Google ML Kit Engine     │
+│ - ai.py: OpenRouter / Ollama Gateway  │   │ - LlmRepository + Streaming│
+│ - db.py: SQLModel SQLite Engine       │   │ - BackgroundSyncService    │
+└───────────────────┬───────────────────┘   └─────────────┬──────────────┘
+                    │                                     │
+                    ▼                                     ▼
+        ┌─────────────────────────────────────────────────────┐
+        │ OpenRouter AI Gateway (Claude, DeepSeek, GPT-4o)    │
+        └─────────────────────────────────────────────────────┘
 ```
 
-- **Backend:** Python 3.10+ (tested on 3.11+), FastAPI, SQLModel, Uvicorn, CTranslate2, Tokenizers, SentencePiece.
-- **Frontend:** React 19, Vite 8, TailwindCSS 4, Lucide React, react-markdown.
-- **Database:** Local SQLite file (`~/.local/share/ai_dict/ai_dict.db` on Linux).
-- **Extension:** Chrome Manifest V3, Shadow DOM style encapsulation, deep selection traversal.
+- **PC Backend:** Python 3.10+ (tested on 3.11+), FastAPI, SQLModel, Uvicorn, CTranslate2, Tokenizers, SentencePiece.
+- **PC Frontend:** React 19, Vite 8, TailwindCSS 4, Lucide React, react-markdown.
+- **PC Extension:** Chrome Manifest V3, Shadow DOM style encapsulation, deep selection traversal.
+- **Android App:** Kotlin 1.9+, Jetpack Compose, Room SQLite, Google ML Kit (Translate & Language ID), OkHttp SSE, compileSdk 34.
 
 ---
 
@@ -123,6 +123,33 @@ AI Dict includes a powerful companion Chrome Extension that brings instant looku
 
 ---
 
+## 📱 Native Android Mobile App
+
+AI Dict includes a full-featured native Android app (`android/`) designed with Jetpack Compose, Room SQLite, and Google ML Kit on-device translation:
+
+### Features on Android:
+- **System-wide Floating Bubble:** Draggable overlay that floats above all apps (YouTube, Kindle, Twitter, Chrome).
+- **Text Selection Integration (`PROCESS_TEXT`):** Select text anywhere on Android to trigger instant AI explanations without switching apps.
+- **System Translation Provider:** Handles standard Android `TRANSLATE` intents.
+- **24/7 Background Protection:** `BackgroundSyncService` maintains long-running LLM streaming and reasoning with a persistent foreground service and wake lock.
+- **Offline ML Kit Engine:** Fast on-device offline translation using lightweight (~30MB) language packs.
+
+### Building & Installing the APK:
+1. **Pre-built APK:** Download or install `android/release_latest.apk`.
+2. **Build from source:**
+   ```bash
+   cd android
+   ./gradlew assembleRelease
+   ```
+3. **Automated Release Script:**
+   ```bash
+   cd android
+   ./build_and_push.sh "Release title / notes"
+   ```
+   *(Bumps version code, builds signed release APK, updates `release_latest.apk`, and pushes to GitHub triggering the `.github/workflows/auto_release.yml` pipeline).*
+
+---
+
 ## ⚙️ Initial Configuration
 
 On your first launch, click the **Settings** gear icon (⚙️) in the sidebar:
@@ -130,8 +157,8 @@ On your first launch, click the **Settings** gear icon (⚙️) in the sidebar:
 1. **OpenRouter API Key:** Enter your OpenRouter API key (get one at [openrouter.ai](https://openrouter.ai)).
 2. **Model Selection:** Select your preferred primary LLM (e.g., `deepseek/deepseek-v4-flash-0731` or `anthropic/claude-3.5-sonnet`).
 3. **Reasoning Effort:** Configure thinking budgets per mode (`none`, `low`, `medium`, `high`, `max`).
-4. **Offline MT Engine:** The NLLB-200 600M model (~600MB) will automatically download on your first MT lookup. You can also click "Download Model" in Settings.
-5. **Local Ollama Fallback (Optional):** Enable Ollama fallback if you want local LLM capability when offline.
+4. **Offline MT Engine:** The NLLB-200 600M model (~600MB) will automatically download on your first MT lookup on PC. On Android, language packs download on-demand.
+5. **Local Ollama Fallback (Optional):** Enable Ollama fallback if you want local LLM capability when offline on PC.
 
 ---
 
@@ -139,11 +166,11 @@ On your first launch, click the **Settings** gear icon (⚙️) in the sidebar:
 
 For comprehensive documentation, consult the dedicated guides:
 
+- [CROSS_PLATFORM_SPEC.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/CROSS_PLATFORM_SPEC.md) — Definitive cross-platform monorepo architecture, feature matrix, technical mismatch justifications, and sync protocols.
 - [DESIGN.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/DESIGN.md) — Architectural philosophy, design principles, dual-track MT/LLM strategy, security considerations, and trade-offs.
 - [TECHNICAL_SPECS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/TECHNICAL_SPECS.md) — Complete technical specification, SQLite database schema, REST API catalog, CTranslate2 threading details, and frontend state machine.
 - [AGENTS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/AGENTS.md) — Operational guidelines for AI coding agents and human contributors, build contracts, database migration protocols, and common pitfalls.
 - [extension/README.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/extension/README.md) — Browser extension architecture, YouTube/Netflix subtitle piercing, event shielding, and usage guide.
-- [ANDROID_PORT_SPECS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/ANDROID_PORT_SPECS.md) — Architectural specification for future Android mobile porting.
 
 ---
 

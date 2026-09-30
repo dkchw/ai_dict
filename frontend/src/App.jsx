@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MarkdownRenderer from './components/MarkdownRenderer'
 import SearchTab from './components/SearchTab'
 import CompareTab from './components/CompareTab'
 import ExplainTab from './components/ExplainTab'
@@ -9,6 +8,7 @@ import TranslationTab from './components/TranslationTab'
 import CorrectionTab from './components/CorrectionTab'
 import LlmTab from './components/LlmTab'
 import MtTab from './components/MtTab'
+import QuickLlmTab from './components/QuickLlmTab'
 import SettingsTab from './components/SettingsTab'
 import FlashcardTab from './components/FlashcardTab'
 import StarRating from './components/StarRating'
@@ -334,7 +334,7 @@ function HoverReviewPopup({ content, anchorRect, popupSize, setPopupSize, isResi
 
         {content ? (
           <div className="markdown-body pr-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <MarkdownRenderer>{content}</MarkdownRenderer>
           </div>
         ) : (
           <div className="flex items-center justify-center p-6 gap-2 text-gray-400">
@@ -363,6 +363,7 @@ function App() {
   else if (pathParts[0] === 'settings') initialTab = 'settings';
   else if (pathParts[0] === 'flashcard' || pathParts[0] === 'flashcards') initialTab = 'flashcard';
   else if (pathParts[0] === 'mt' || pathParts[0] === 'machinetranslation') initialTab = 'mt';
+  else if (pathParts[0] === 'quickllm' || pathParts[0] === 'quick-llm' || pathParts[0] === 'simplellm') initialTab = 'quick_llm';
 
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -1340,6 +1341,7 @@ function App() {
       else if (parts[0] === 'mt' || parts[0] === 'machinetranslation') setActiveTab('mt');
       else if (parts[0] === 'settings') setActiveTab('settings');
       else if (parts[0] === 'flashcard' || parts[0] === 'flashcards') setActiveTab('flashcard');
+      else if (parts[0] === 'quickllm' || parts[0] === 'quick-llm' || parts[0] === 'simplellm') setActiveTab('quick_llm');
       else setActiveTab('search');
     };
     window.addEventListener('popstate', handlePopState);
@@ -1483,6 +1485,9 @@ function App() {
       const tab = mtTabs.find(t => t.id === activeMtTabId);
       if (tab) title = tab.title;
       emoji = tab?.id === 'history' ? '🕒' : '⚡';
+    } else if (activeTab === 'quick_llm') {
+      title = 'Quick LLM (Ling Flash)';
+      emoji = '⚡';
     } else if (activeTab === 'settings') {
       title = 'Settings';
       emoji = '⚙️';
@@ -1860,6 +1865,11 @@ function App() {
     }
     setActiveTab('mt');
     updateUrlPath('/mt');
+  };
+
+  const handleQuickLlmClick = () => {
+    setActiveTab('quick_llm');
+    updateUrlPath('/quickllm');
   };
 
   const getGroupedByDay = (items, sortKey) => {
@@ -2847,6 +2857,19 @@ function App() {
           updateShowRecentEmpty={updateShowRecentEmpty}
           profiles={profiles}
           activeProfileId={activeProfileId}
+        />
+      );
+    }
+
+    if (activeTab === 'quick_llm') {
+      return (
+        <QuickLlmTab
+          profileId={activeProfileId}
+          profileName={activeProfileName}
+          settings={settings}
+          onSaveWord={() => {
+            fetchWords();
+          }}
         />
       );
     }
@@ -5300,6 +5323,7 @@ function App() {
           <NavItem collapsed={sidebarCollapsed} icon={<MessageSquare />} label="Explain" active={activeTab === 'explain'} onClick={handleExplainClick} />
           <NavItem collapsed={sidebarCollapsed} icon={<Globe />} label="Translation" active={activeTab === 'translation'} onClick={handleTranslationClick} />
           <NavItem collapsed={sidebarCollapsed} icon={<CheckCheck />} label="Correction" active={activeTab === 'correction'} onClick={handleCorrectionClick} />
+          <NavItem collapsed={sidebarCollapsed} icon={<Zap className="text-amber-500 fill-amber-500/20" />} label="Quick LLM" active={activeTab === 'quick_llm'} onClick={handleQuickLlmClick} />
           <NavItem collapsed={sidebarCollapsed} icon={<Zap />} label="Machine Translate" active={activeTab === 'mt'} onClick={handleMtClick} />
         </nav>
 

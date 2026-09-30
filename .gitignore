@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# Node / Web Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+.npm
+.eslintcache
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/app/*.iml
+.cxx/
+
+# APKs (ignore debug builds, allow tracking release_latest.apk)
+*.apk
+!android/release_latest.apk
+
+# Database & Runtime Data
+*.db
+*.sqlite
+*.sqlite3
+!test_*.db
+
+# Operating System & Editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

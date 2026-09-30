@@ -1,0 +1,39 @@
+name: Auto Publish Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'android/release_latest.apk'
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Extract Version Name
+        id: extract_version
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts | head -1)
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "TAG_NAME=v$VERSION_NAME" >> $GITHUB_ENV
+
+      - name: Rename APK
+        run: cp android/release_latest.apk ai_dict_${{ env.TAG_NAME }}.apk
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: AI Dict ${{ env.TAG_NAME }}
+          body: "Automated release published from locally compiled APK."
+          files: ai_dict_${{ env.TAG_NAME }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

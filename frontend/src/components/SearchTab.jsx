@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MarkdownRenderer from './MarkdownRenderer'
 import { ArrowRightLeft, Search, History, PlusSquare, Zap, Copy, ExternalLink, Loader2, RefreshCw, Pencil, Check, X, Trash2, Settings, ChevronDown, ChevronUp, Edit, Sparkles, BookOpen, Eye, Send, Shuffle, Folder, FolderPlus } from 'lucide-react'
 
 import SpeechButton from './SpeechButton'
@@ -950,7 +949,7 @@ export default function SearchTab({ words, onOpenHistory, tabId, fetchWords, set
                       {chat.role === 'user' ? (
                         <p className="whitespace-pre-wrap">{chat.content}</p>
                       ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{chat.content}</ReactMarkdown>
+                        <MarkdownRenderer>{chat.content}</MarkdownRenderer>
                       )}
                       {chat.role !== 'user' && chat.id !== 'temp' && (
                         <button

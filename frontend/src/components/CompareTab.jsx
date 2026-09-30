@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MarkdownRenderer from './MarkdownRenderer'
 import { History, Zap, ArrowRightLeft, Copy, Loader2, RefreshCw, GitCompare, Pencil, Check, X, Trash2, Settings, ChevronDown, ChevronUp, Sparkles, Eye, Send, Shuffle } from 'lucide-react'
 import ChatMessageActions from './ChatMessageActions'
 
@@ -687,7 +686,7 @@ export default function CompareTab({ comparisons, tabId, fetchComparisons, setti
                       {chat.role === 'user' ? (
                         <p className="whitespace-pre-wrap">{chat.content}</p>
                       ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{chat.content}</ReactMarkdown>
+                        <MarkdownRenderer>{chat.content}</MarkdownRenderer>
                       )}
                       {chat.role !== 'user' && chat.id !== 'temp' && (
                         <button

@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   showExternalFallbackOverlay: false, // Default: false - turn off iframe restriction warning overlay
   defaultPersistentWindow: false, // Default: false - persistent floating window is tab-dependent
   persistentNewTabOnLoading: false, // Default: false - open new tab in persistent window if previous word still loading
+  showLlmModeInPopup: true, // Show Full LLM Mode switch in toolbar popup menu
   blacklist: ['docs.google.com', 'sheets.google.com'],
   externalSites: []
 };
@@ -68,8 +69,8 @@ chrome.runtime.onInstalled.addListener(async () => {
       toSet[k] = v;
     }
   }
-  // Ensure default action is MT translate
-  if (!current.defaultMode || current.defaultMode === 'search') {
+  // Ensure default action is MT translate on fresh install
+  if (!current.defaultMode) {
     toSet.defaultMode = 'machine_translation';
   }
   if (Object.keys(toSet).length > 0) {

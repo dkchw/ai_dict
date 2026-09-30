@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MarkdownRenderer from "./MarkdownRenderer";
 import { History, ArrowRightLeft, Copy, Loader2, RefreshCw, Pencil, Check, X, Trash2, Settings, ChevronDown, ChevronUp, Sparkles, Eye, Send, Shuffle, CheckCheck, FileText, ToggleLeft, ToggleRight, Folder, FolderPlus, Zap } from 'lucide-react';
 import { COLORS } from "./SearchTab";
 import SpeechButton from "./SpeechButton";
@@ -934,7 +933,7 @@ export default function CorrectionTab({
                       {chat.role === 'user' ? (
                         <div className="whitespace-pre-wrap">{chat.content}</div>
                       ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{chat.content}</ReactMarkdown>
+                        <MarkdownRenderer>{chat.content}</MarkdownRenderer>
                       )}
                       {chat.role !== 'user' && chat.id !== 'temp' && (
                         <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">

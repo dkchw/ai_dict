@@ -17,6 +17,7 @@ This document is the **operating manual for autonomous AI coding agents and huma
 - **Database:** SQLite local file (`~/.local/share/ai_dict/ai_dict.db` on Linux), managed via SQLModel: [`src/ai_dict/db.py`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/src/ai_dict/db.py).
 - **LLM Gateway:** OpenRouter API (Claude, GPT-4o, DeepSeek, etc.) + optional local Ollama fallback: [`src/ai_dict/ai.py`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/src/ai_dict/ai.py).
 - **Browser Extension:** Chrome Manifest V3 with Shadow DOM isolation, deep subtitle piercing, and video event shielding: [`extension/`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/extension/).
+- **Android Mobile App:** Kotlin 1.9+, Jetpack Compose, Room SQLite, Google ML Kit (Translate & Language ID), OkHttp SSE, compileSdk 34: [`android/`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/android/).
 
 ---
 
@@ -34,6 +35,23 @@ After building:
 
 ### 1.3 Backend Changes Contract
 Changes to Python files (`server.py`, `ai.py`, `mt.py`, `db.py`, `config.py`) require the user to **restart the backend server** (`ai_dict` command).
+
+---
+
+### 1.4 Android Compilation & Parity Contract
+**If you touch ANY file inside `android/`**, you MUST verify compilation:
+```bash
+cd android && ./gradlew compileDebugKotlin
+```
+To assemble a fresh debug or release package:
+```bash
+cd android && ./gradlew assembleDebug
+# Or automated release with git push:
+cd android && ./build_and_push.sh "Commit message"
+```
+
+> [!IMPORTANT]
+> **Cross-Platform Synchronous Rule:** When you update a prompt, add an analytical lens, introduce a setting key, or modify a feature on PC, you **MUST simultaneously update the corresponding Android implementation** (see [CROSS_PLATFORM_SPEC.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/CROSS_PLATFORM_SPEC.md)). Do not leave the mobile app out of sync.
 
 ---
 
@@ -204,15 +222,20 @@ Follow this checklist for every task:
 
 ```
 1. Read DESIGN.md to understand the architectural intent and trade-offs.
-2. Read TECHNICAL_SPECS.md for exact table schemas, endpoints, and types.
-3. Make Backend Changes:
+2. Read CROSS_PLATFORM_SPEC.md to understand parity, platform divergences, and sync rules.
+3. Read TECHNICAL_SPECS.md for exact table schemas, endpoints, and types.
+4. Make Backend Changes (if applicable):
    - If db.py modified -> Run raw SQL ALTER TABLE script against live DB.
    - Test routes using FastAPI TestClient or curl.
-4. Make Frontend Changes:
+5. Make Frontend Changes (if applicable):
    - Run: cd frontend && npm run build
-5. Make Extension Changes (if applicable):
+6. Make Android Changes (if applicable):
+   - If prompts/features changed -> Update DefaultPrompts.kt & LlmRepository.kt.
+   - Verify build: cd android && ./gradlew compileDebugKotlin
+   - If releasing: cd android && ./build_and_push.sh "Version notes"
+7. Make Extension Changes (if applicable):
    - Reload unpacked extension in chrome://extensions/
-6. Verification:
+8. Verification:
    - Hard-refresh browser (Ctrl+Shift+R).
    - If Python changed -> restart backend (ai_dict command).
 ```
@@ -226,6 +249,8 @@ Follow this checklist for every task:
 | `OperationalError: no such column: <col>` | Added column to `db.py` without updating live SQLite file. | Run one-off `ALTER TABLE <table> ADD COLUMN <col> <TYPE>` script on live DB. |
 | API endpoint returns HTML `<!DOCTYPE html>` | Route was added below the catch-all `@app.get("/{full_path:path}")`. | Move the route ABOVE the catch-all handler in `server.py`. |
 | Changes in `frontend/src/*` don't show up in browser | Static files were not compiled, or browser cached old assets. | Run `cd frontend && npm run build`, then hard-refresh browser (`Ctrl+Shift+R`). |
+| Android build fails with Unresolved Reference | Modified Kotlin data class or method signature without updating callers. | Run `cd android && ./gradlew compileDebugKotlin` to identify mismatched types or call sites. |
+| Android MT fails or reports missing model | ML Kit language pack has not been downloaded on-device yet. | In Android Settings, open "Manage Offline Models" or ensure internet is enabled for the initial ~30MB pack download. |
 | `AttributeError` or blank fields after `session.commit()` | SQLModel expired instance attributes on commit. | Add `session.refresh(obj)` immediately after `session.commit()`. |
 | Typing in extension card toggles YouTube fullscreen or pauses video | Host video player captured global keydown events on `window`. | Add `e.stopPropagation()` to `keydown` and `keyup` listeners on all inputs/textareas. |
 | Extension card invisible in video fullscreen mode | Extension root is appended to `document.body`, which is layered under fullscreen container. | Re-parent `#ai-dict-extension-root` into `document.fullscreenElement`. |

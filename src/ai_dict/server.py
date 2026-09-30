@@ -24,7 +24,10 @@ from .ai import (
     chat_with_comparison, explain_text, chat_with_explain, translate_concept,
     chat_with_translation, resolve_source_language, resolve_target_language,
     get_ollama_base_url, is_ollama_fallback_enabled, fetch_ollama_models_sync,
-    check_ollama_alive, get_model
+    check_ollama_alive, get_model, lookup_simple_llm, SIMPLE_LLM_PROMPTS,
+    get_simple_llm_model, get_simple_llm_default_prompt,
+    get_ordered_simple_llm_prompts, get_simple_llm_custom_config,
+    save_simple_llm_custom_config, get_simple_llm_prompt_by_key
 )
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,6 +104,34 @@ class MtTranslateRequest(BaseModel):
     profile_id: Optional[int] = 1
     session_id: Optional[str] = None
     save_history: Optional[bool] = True
+
+class SimpleLlmLookupRequest(BaseModel):
+    text: str
+    source_lang: Optional[str] = None
+    target_lang: Optional[str] = None
+    model: Optional[str] = None
+    profile_id: Optional[int] = 1
+    prompt_key: Optional[str] = None
+    custom_prompt: Optional[str] = None
+    session_id: Optional[str] = None
+
+class SimpleLlmSaveRequest(BaseModel):
+    text: str
+    content: str
+    source_lang: Optional[str] = None
+    target_lang: Optional[str] = None
+    profile_id: Optional[int] = 1
+    session_id: Optional[str] = None
+
+class SimpleLlmPromptItem(BaseModel):
+    id: Optional[str] = None
+    name: str
+    icon: Optional[str] = "⚡"
+    description: Optional[str] = ""
+    prompt: str
+
+class SimpleLlmReorderRequest(BaseModel):
+    order: list[str]
 
 class WordSessionReq(BaseModel):
     session_id: Optional[str] = None
@@ -658,7 +689,10 @@ async def retry_explain_chat(chat_id: int, req: ChatRetryRequest = ChatRetryRequ
 @app.post("/api/explains/search")
 async def search_explain(req: ExplainSearchRequest, session: Session = Depends(get_session)):
     raw_text = req.text.strip()
-    clean_text = raw_text.strip(".,;:!?\"'“”‘’()[]{}")
+    if raw_text.endswith("...") or raw_text.endswith("…"):
+        clean_text = raw_text.strip(",;:!?\"'“”‘’()[]{}")
+    else:
+        clean_text = raw_text.strip(".,;:!?\"'“”‘’()[]{}")
     if not clean_text:
         clean_text = raw_text
     
@@ -4175,6 +4209,301 @@ async def mt_download_endpoint(req: dict, session: Session = Depends(get_session
         _DOWNLOAD_IN_PROGRESS[repo_id] = True
         asyncio.create_task(_background_download_model(repo_id))
     return {"status": "downloading", "level": level, "message": f"Downloading {MT_MODELS[level]['name']} in background..."}
+
+# --- Simple LLM (Ling Flash • Ephemeral / Zero-Save with manual persist) ---
+
+@app.get("/api/simple-llm/prompts")
+async def get_simple_llm_prompts(session: Session = Depends(get_session)):
+    prompts = get_ordered_simple_llm_prompts(session)
+    return prompts
+
+@app.post("/api/simple-llm/prompts")
+async def save_simple_llm_prompt(req: SimpleLlmPromptItem, session: Session = Depends(get_session)):
+    name = req.name.strip()
+    prompt_text = req.prompt.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Lens name cannot be empty")
+    if not prompt_text:
+        raise HTTPException(status_code=400, detail="Prompt content cannot be empty")
+
+    config = get_simple_llm_custom_config(session)
+    lenses = config.get("lenses", {})
+    order = config.get("order", [])
+    deleted = config.get("deleted", [])
+
+    prompt_id = (req.id or "").strip()
+    if not prompt_id:
+        import uuid
+        prompt_id = f"custom_{uuid.uuid4().hex[:8]}"
+
+    if prompt_id in deleted:
+        deleted = [d for d in deleted if d != prompt_id]
+        config["deleted"] = deleted
+
+    icon = (req.icon or "⚡").strip()
+    desc = (req.description or "").strip()
+
+    lenses[prompt_id] = {
+        "id": prompt_id,
+        "name": name,
+        "icon": icon,
+        "description": desc,
+        "prompt": prompt_text
+    }
+    config["lenses"] = lenses
+
+    if prompt_id not in order:
+        order.append(prompt_id)
+        config["order"] = order
+
+    save_simple_llm_custom_config(session, config)
+    all_prompts = get_ordered_simple_llm_prompts(session)
+    return {"status": "ok", "prompt_id": prompt_id, "prompts": all_prompts}
+
+@app.delete("/api/simple-llm/prompts/{prompt_id}")
+async def delete_simple_llm_prompt(prompt_id: str, session: Session = Depends(get_session)):
+    prompt_id = prompt_id.strip()
+    config = get_simple_llm_custom_config(session)
+    lenses = config.get("lenses", {})
+    order = config.get("order", [])
+    deleted = config.get("deleted", [])
+
+    if prompt_id in lenses:
+        del lenses[prompt_id]
+        config["lenses"] = lenses
+
+    if prompt_id in SIMPLE_LLM_PROMPTS and prompt_id not in deleted:
+        deleted.append(prompt_id)
+        config["deleted"] = deleted
+
+    if prompt_id in order:
+        config["order"] = [o for o in order if o != prompt_id]
+
+    save_simple_llm_custom_config(session, config)
+    all_prompts = get_ordered_simple_llm_prompts(session)
+    return {"status": "ok", "prompts": all_prompts}
+
+@app.post("/api/simple-llm/prompts/reorder")
+async def reorder_simple_llm_prompts(req: SimpleLlmReorderRequest, session: Session = Depends(get_session)):
+    config = get_simple_llm_custom_config(session)
+    config["order"] = [o.strip() for o in req.order if o.strip()]
+    save_simple_llm_custom_config(session, config)
+    all_prompts = get_ordered_simple_llm_prompts(session)
+    return {"status": "ok", "order": config["order"], "prompts": all_prompts}
+
+@app.post("/api/simple-llm/prompts/reset")
+async def reset_simple_llm_prompts(session: Session = Depends(get_session)):
+    save_simple_llm_custom_config(session, {"lenses": {}, "order": [], "deleted": []})
+    all_prompts = get_ordered_simple_llm_prompts(session)
+    return {"status": "ok", "prompts": all_prompts}
+
+@app.post("/api/simple-llm/lookup")
+async def simple_llm_lookup(req: SimpleLlmLookupRequest, session: Session = Depends(get_session)):
+    raw_text = req.text.strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    pid = req.profile_id or 1
+    model = req.model.strip() if req.model and req.model.strip() else None
+    prompt_key = req.prompt_key if req.prompt_key and req.prompt_key.strip() else None
+    
+    try:
+        content = await lookup_simple_llm(
+            text=raw_text,
+            session=session,
+            explicit_model=model,
+            source_language=req.source_lang,
+            target_language=req.target_lang,
+            profile_id=pid,
+            prompt_key=prompt_key,
+            custom_prompt=req.custom_prompt
+        )
+        language, lemma = extract_language_and_lemma(content)
+        resolved_model = model or get_simple_llm_model(session, pid)
+        resolved_prompt = prompt_key or get_simple_llm_default_prompt(session, pid)
+        return {
+            "status": "ok",
+            "saved": False,
+            "model": resolved_model,
+            "prompt_key": resolved_prompt,
+            "term": raw_text,
+            "language": language or req.source_lang,
+            "lemma": lemma or raw_text,
+            "content": content,
+            "chats": [{"role": "assistant", "content": content}]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/simple-llm/save")
+async def simple_llm_save(req: SimpleLlmSaveRequest, session: Session = Depends(get_session)):
+    raw_text = req.text.strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+        
+    pid = req.profile_id or 1
+    if raw_text.endswith("...") or raw_text.endswith("…"):
+        clean_term = raw_text.strip(",;:!?\"'“”‘’()[]{}")
+    else:
+        clean_term = raw_text.strip(".,;:!?\"'“”‘’()[]{}")
+    if not clean_term:
+        clean_term = raw_text
+
+    words = clean_term.split()
+    
+    # Decide whether this is a single word/short term (Word table) or sentence/pattern (Explain table)
+    is_word = len(words) <= 3 and not any(p in raw_text for p in ['.', '!', '?'])
+    
+    language, lemma = extract_language_and_lemma(req.content)
+    final_lang = language or req.source_lang or None
+    
+    if is_word:
+        # Check existing word in profile
+        existing = session.exec(
+            select(Word).where(
+                func.lower(Word.term) == clean_term.lower(),
+                Word.profile_id == pid
+            )
+        ).first()
+        if existing:
+            existing.search_count = (existing.search_count or 0) + 1
+            existing.view_count = (existing.view_count or 0) + 1
+            existing.updated_at = datetime.utcnow()
+            if req.session_id:
+                existing.session_id = req.session_id
+            if final_lang and not existing.language:
+                existing.language = final_lang
+            if lemma and not existing.lemma:
+                existing.lemma = lemma
+            session.add(existing)
+            session.commit()
+            session.refresh(existing)
+            
+            chat = session.exec(
+                select(ChatMessage).where(
+                    ChatMessage.word_id == existing.id,
+                    ChatMessage.role == 'assistant'
+                )
+            ).first()
+            if chat:
+                chat.content = req.content
+                session.add(chat)
+            else:
+                chat = ChatMessage(word_id=existing.id, role="assistant", content=req.content)
+                session.add(chat)
+            session.commit()
+            session.refresh(chat)
+            session.refresh(existing)
+            all_chats = session.exec(select(ChatMessage).where(ChatMessage.word_id == existing.id).order_by(ChatMessage.created_at)).all()
+            return {
+                "status": "ok",
+                "saved": True,
+                "mode": "search",
+                "id": existing.id,
+                "word": existing.model_dump(),
+                "chats": [c.model_dump() for c in all_chats]
+            }
+        else:
+            new_word = Word(
+                term=clean_term,
+                language=final_lang,
+                lemma=lemma or clean_term,
+                search_count=1,
+                view_count=1,
+                session_id=req.session_id,
+                profile_id=pid,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            session.add(new_word)
+            session.commit()
+            session.refresh(new_word)
+            
+            chat = ChatMessage(word_id=new_word.id, role="assistant", content=req.content)
+            session.add(chat)
+            session.commit()
+            session.refresh(chat)
+            session.refresh(new_word)
+            return {
+                "status": "ok",
+                "saved": True,
+                "mode": "search",
+                "id": new_word.id,
+                "word": new_word.model_dump(),
+                "chats": [chat.model_dump()]
+            }
+    else:
+        # Check existing explain in profile
+        existing_exp = session.exec(
+            select(Explain).where(
+                or_(
+                    func.lower(Explain.text) == clean_term.lower(),
+                    func.lower(Explain.text) == raw_text.lower()
+                ),
+                Explain.profile_id == pid
+            )
+        ).first()
+        if existing_exp:
+            existing_exp.search_count = (existing_exp.search_count or 0) + 1
+            existing_exp.view_count = (existing_exp.view_count or 0) + 1
+            existing_exp.updated_at = datetime.utcnow()
+            if req.session_id:
+                existing_exp.session_id = req.session_id
+            session.add(existing_exp)
+            session.commit()
+            session.refresh(existing_exp)
+            
+            chat = session.exec(
+                select(ExplainChat).where(
+                    ExplainChat.explain_id == existing_exp.id,
+                    ExplainChat.role == 'assistant'
+                )
+            ).first()
+            if chat:
+                chat.content = req.content
+                session.add(chat)
+            else:
+                chat = ExplainChat(explain_id=existing_exp.id, role="assistant", content=req.content)
+                session.add(chat)
+            session.commit()
+            session.refresh(chat)
+            session.refresh(existing_exp)
+            all_chats = session.exec(select(ExplainChat).where(ExplainChat.explain_id == existing_exp.id).order_by(ExplainChat.created_at)).all()
+            return {
+                "status": "ok",
+                "saved": True,
+                "mode": "explain",
+                "id": existing_exp.id,
+                "explain": existing_exp.model_dump(),
+                "chats": [c.model_dump() for c in all_chats]
+            }
+        else:
+            new_exp = Explain(
+                text=raw_text,
+                search_count=1,
+                view_count=1,
+                session_id=req.session_id,
+                profile_id=pid,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            session.add(new_exp)
+            session.commit()
+            session.refresh(new_exp)
+            
+            chat = ExplainChat(explain_id=new_exp.id, role="assistant", content=req.content)
+            session.add(chat)
+            session.commit()
+            session.refresh(chat)
+            session.refresh(new_exp)
+            return {
+                "status": "ok",
+                "saved": True,
+                "mode": "explain",
+                "id": new_exp.id,
+                "explain": new_exp.model_dump(),
+                "chats": [chat.model_dump()]
+            }
 
 # --- Static Frontend Serving ---
 static_path = os.path.join(os.path.dirname(__file__), "static")

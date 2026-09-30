@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MarkdownRenderer from './MarkdownRenderer'
 import { History, Zap, ArrowRightLeft, Copy, Loader2, RefreshCw, BookOpen, Pencil, Check, X, Trash2, Settings, ChevronDown, ChevronUp, Sparkles, MessageSquare, Eye, Send, Shuffle } from 'lucide-react'
 import SpeechButton from './SpeechButton'
 import ChatMessageActions from './ChatMessageActions'
@@ -51,6 +50,38 @@ export default function ExplainTab({ explains, tabId, fetchExplains, settings, d
 
   const [editingChatId, setEditingChatId] = useState(null)
   const [editingContent, setEditingContent] = useState('')
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [newTitleText, setNewTitleText] = useState('')
+
+  const handleSaveTitle = async () => {
+    if (!currentExplain || !newTitleText.trim()) {
+      setEditingTitle(false);
+      return;
+    }
+    const trimmed = newTitleText.trim();
+    if (trimmed === currentExplain.text) {
+      setEditingTitle(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/explains/${currentExplain.id}/rename`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ term: trimmed })
+      });
+      if (res.ok) {
+        setCurrentExplain(prev => ({ ...prev, text: trimmed }));
+        if (onUpdateTab) {
+          onUpdateTab(tabId, { title: trimmed });
+        }
+        if (fetchExplains) fetchExplains();
+      }
+    } catch (e) {
+      console.error('Failed to rename explanation:', e);
+    } finally {
+      setEditingTitle(false);
+    }
+  };
 
 
   useEffect(() => {
@@ -541,10 +572,67 @@ export default function ExplainTab({ explains, tabId, fetchExplains, settings, d
           {/* Card Header */}
           <div className="p-4 sm:p-5 border-b border-gray-200/80 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-[#73daca] tracking-tight">
-                  {currentExplain?.text || explainSearchTerm}
-                </h2>
+              <div className="flex items-center gap-2.5 flex-wrap max-w-full">
+                {editingTitle ? (
+                  <div className="flex items-center gap-1.5 flex-1 min-w-[220px] max-w-xl">
+                    <input
+                      type="text"
+                      value={newTitleText}
+                      onChange={(e) => setNewTitleText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveTitle();
+                        if (e.key === 'Escape') setEditingTitle(false);
+                      }}
+                      autoFocus
+                      className="px-2.5 py-1 text-base font-semibold bg-white dark:bg-gray-700 border border-teal-500 rounded-lg outline-none text-gray-900 dark:text-gray-100 flex-1 shadow-xs"
+                      placeholder="Title or pattern (e.g. ABC do ...)"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveTitle}
+                      className="p-1.5 text-teal-600 hover:text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/50 rounded-lg cursor-pointer transition-colors"
+                      title="Save title"
+                    >
+                      <Check size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTitle(false)}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg cursor-pointer transition-colors"
+                      title="Cancel"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 max-w-full">
+                    <h2
+                      className={`font-bold text-gray-900 dark:text-[#73daca] tracking-tight leading-snug break-words ${
+                        (currentExplain?.text || explainSearchTerm).length > 60
+                          ? 'text-lg sm:text-xl'
+                          : (currentExplain?.text || explainSearchTerm).length > 30
+                          ? 'text-xl sm:text-2xl'
+                          : 'text-2xl sm:text-3xl'
+                      }`}
+                      title={currentExplain?.text || explainSearchTerm}
+                    >
+                      {currentExplain?.text || explainSearchTerm}
+                    </h2>
+                    {!currentExplain?.isTemp && currentExplain?.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTitleText(currentExplain.text || '');
+                          setEditingTitle(true);
+                        }}
+                        className="p-1 text-gray-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-md transition-colors cursor-pointer shrink-0"
+                        title="Rename or shorten title (e.g. ABC do ...)"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                  </div>
+                )}
                 {(currentExplain?.text || explainSearchTerm) && (
                   <SpeechButton
                     text={currentExplain?.text || explainSearchTerm}
@@ -695,7 +783,7 @@ export default function ExplainTab({ explains, tabId, fetchExplains, settings, d
                       {chat.role === 'user' ? (
                         <p className="whitespace-pre-wrap">{chat.content}</p>
                       ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{chat.content}</ReactMarkdown>
+                        <MarkdownRenderer>{chat.content}</MarkdownRenderer>
                       )}
                       {chat.role !== 'user' && chat.id !== 'temp' && (
                         <button

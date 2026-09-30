@@ -85,6 +85,7 @@
             <label class="form-label" for="opt-default-mode">Default Lookup Action</label>
             <select id="opt-default-mode" class="form-control" style="max-width:420px;">
               <option value="machine_translation" selected>⚡ Simple Machine Translate (Google Translate style, no memory - Default)</option>
+              <option value="simple_llm">⚡ Simple LLM (Ling Flash • inclusionai/ling-3.0-flash, no-save by default)</option>
               <option value="search">✨ Full Feature AI Dict (Word Mode - LLM)</option>
               <option value="explain">📖 Explain (LLM)</option>
               <option value="translation">🌐 Translation (LLM)</option>
@@ -92,7 +93,31 @@
               <option value="compare">⚖️ Compare (LLM)</option>
             </select>
             <div class="form-hint" style="margin-top:6px;">
-              <strong>Simple Machine Translate (Default):</strong> Lightweight Google Translate-style popup powered by offline Meta NLLB-200 (Standard 600M). Zero database memory / history saving. You can switch to Full Feature Mode anytime with 1 click.
+              <strong>Simple Machine Translate (Default):</strong> Lightweight Google Translate-style popup powered by offline Meta NLLB-200 (Standard 600M). Zero database memory / history saving.<br>
+              <strong>Simple LLM:</strong> Fast, lightweight LLM lookups (defaults to <code>inclusionai/ling-3.0-flash</code>) with zero automatic database saving. Only saves to your active profile when you click "Save to Profile".
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:18px;" id="opt-simple-llm-model-group">
+            <label class="form-label" for="opt-simple-llm-model">Simple LLM Model Identifier</label>
+            <input type="text" id="opt-simple-llm-model" class="form-control" style="max-width:420px;" placeholder="inclusionai/ling-3.0-flash" value="inclusionai/ling-3.0-flash" />
+            <div class="form-hint" style="margin-top:6px;">
+              Specify the OpenRouter or Ollama model used for Simple LLM mode (default: <code>inclusionai/ling-3.0-flash</code>).
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:18px;" id="opt-simple-llm-prompt-group">
+            <label class="form-label" for="opt-simple-llm-prompt">Quick LLM Default Prompt Preset</label>
+            <select id="opt-simple-llm-prompt" class="form-control" style="max-width:420px;">
+              <option value="quick_glance">⚡ Quick Glance (Core meaning, POS, key nuances)</option>
+              <option value="grammar_breakdown">🧩 Grammar & Syntax (Sentence structure, clause parsing)</option>
+              <option value="nuance_slang">💡 Nuance & Context (Idiomatic use, cultural undertones)</option>
+              <option value="simplify">👶 Plain & Simple (ELI5, everyday analogy)</option>
+              <option value="key_points">📋 Key Takeaway (Bullet points, quick synthesis)</option>
+              <option value="examples">🗣️ Real Dialogues (Authentic contextual conversations)</option>
+            </select>
+            <div class="form-hint" style="margin-top:6px;">
+              Choose the default analytical lens applied when Quick LLM runs. You can also quickly switch prompts on-the-fly during or after any lookup.
             </div>
           </div>
 
@@ -141,6 +166,13 @@
             <label class="checkbox-label">
               <input type="checkbox" id="opt-persistent-newtab" />
               <span><strong>Open New Tab If Previous Word Still Loading:</strong> When persistent window mode is active and you look up another word while the current word is still generating, open it in a concurrent tab inside the floating window instead of replacing the current lookup.</span>
+            </label>
+          </div>
+
+          <div class="checkbox-row" style="margin-top:10px; padding:10px 12px; background:rgba(125,125,125,0.08); border-radius:8px;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="opt-show-llm-mode-in-popup" />
+              <span><strong>Show Quick & Full LLM Mode Bar in Browser Icon Popup:</strong> Display the quick LLM mode switches (⚡ Quick LLM & ✨ Full LLM) and launchers in the menu when clicking the pinned browser extension icon.</span>
             </label>
           </div>
 

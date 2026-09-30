@@ -229,6 +229,14 @@ export default function SettingsTab({
   const [selectedProfileId, setSelectedProfileId] = useState(activeProfileId || 'global')
   const [ollamaStatus, setOllamaStatus] = useState({ running: false, models: [], activeModel: '', loading: false })
   const [mtStatus, setMtStatus] = useState({ active_level: 'standard', extension_default: true, models: {}, ollama_ready: false, loading: false })
+  const [simpleLlmPrompts, setSimpleLlmPrompts] = useState([])
+
+  useEffect(() => {
+    fetch('/api/simple-llm/prompts')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { if (Array.isArray(data) && data.length > 0) setSimpleLlmPrompts(data) })
+      .catch(() => {})
+  }, [])
 
   const fetchOllamaStatus = async () => {
     setOllamaStatus(prev => ({ ...prev, loading: true }))
@@ -601,6 +609,60 @@ export default function SettingsTab({
               onReset={() => resetVal('CORRECTION_MODEL')}
               profileName={profileName}
             />
+            <ModelInput
+              id="simple-llm-model"
+              label="Quick LLM Model"
+              description="Used for Quick LLM (Ling Flash) ephemeral lookups"
+              value={getVal('SIMPLE_LLM_MODEL')}
+              onChange={v => setVal('SIMPLE_LLM_MODEL', v)}
+              placeholder="inclusionai/ling-3.0-flash"
+              defaultVal="inclusionai/ling-3.0-flash"
+              models={models}
+              isGlobal={isGlobal}
+              isCustom={isCustom('SIMPLE_LLM_MODEL')}
+              inheritedVal={getInheritedVal('SIMPLE_LLM_MODEL')}
+              onReset={() => resetVal('SIMPLE_LLM_MODEL')}
+              profileName={profileName}
+            />
+            <div className="md:col-span-2 space-y-1.5 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700/80">
+              <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 flex items-center justify-between">
+                <span>Quick LLM Default Prompt Preset</span>
+                {isCustom('SIMPLE_LLM_DEFAULT_PROMPT') && (
+                  <button
+                    type="button"
+                    onClick={() => resetVal('SIMPLE_LLM_DEFAULT_PROMPT')}
+                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    Reset to global
+                  </button>
+                )}
+              </label>
+              <select
+                value={getVal('SIMPLE_LLM_DEFAULT_PROMPT') || 'quick_glance'}
+                onChange={e => setVal('SIMPLE_LLM_DEFAULT_PROMPT', e.target.value)}
+                className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+              >
+                {(simpleLlmPrompts && simpleLlmPrompts.length > 0 ? simpleLlmPrompts : [
+                  { id: 'quick_glance', icon: '⚡', name: 'Quick Glance (Core meaning, POS, key nuances)' },
+                  { id: 'grammar_breakdown', icon: '🧩', name: 'Grammar & Syntax (Sentence structure, clause parsing)' },
+                  { id: 'nuance_slang', icon: '💡', name: 'Nuance & Context (Idiomatic use, cultural undertones)' },
+                  { id: 'simplify', icon: '👶', name: 'Plain & Simple (ELI5, everyday analogy)' },
+                  { id: 'key_points', icon: '📋', name: 'Key Takeaway (Bullet points, quick synthesis)' },
+                  { id: 'examples', icon: '🗣️', name: 'Real Dialogues (Authentic contextual conversations)' }
+                ]).map(p => {
+                  const icon = p.icon || '⚡'
+                  const label = p.name ? (p.name.includes(icon) ? p.name : `${icon} ${p.name}`) : p.id
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {label} {p.description ? `— ${p.description}` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                Default analytical lens applied when Quick LLM runs in WebUI or browser extension.
+              </p>
+            </div>
             <div className="md:col-span-2">
               <ModelInput
                 id="chat-model"

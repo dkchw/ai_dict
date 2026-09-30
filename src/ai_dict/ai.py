@@ -76,6 +76,18 @@ def get_correction_model(session: Session, profile_id: int = None) -> str:
     val = get_model(session, "CORRECTION_MODEL", profile_id=profile_id)
     return val if val else (settings.correction_model or settings.default_model)
 
+def get_simple_llm_model(session: Session, profile_id: int = None) -> str:
+    val = get_model(session, "SIMPLE_LLM_MODEL", profile_id=profile_id)
+    return val if val else "inclusionai/ling-3.0-flash"
+
+def get_simple_llm_default_prompt(session: Session, profile_id: int = None) -> str:
+    val = get_model(session, "SIMPLE_LLM_DEFAULT_PROMPT", profile_id=profile_id)
+    if val:
+        prompts = get_ordered_simple_llm_prompts(session)
+        if any(p["id"] == val for p in prompts):
+            return val
+    return "quick_glance"
+
 def get_ollama_base_url(session: Session) -> str:
     val = get_model(session, "OLLAMA_BASE_URL")
     if not val:
@@ -277,14 +289,19 @@ def get_system_prompt(session: Session, profile_id: int = None) -> str:
     return get_prompt_value(session, "DICT_PROMPT", profile_id=profile_id, fallback=fallback)
 
 
-DEFAULT_EXPLAIN_PROMPT = """You are a multilingual language explainer designed for comprehensive sentence and paragraph analysis.
-When the user provides a sentence or paragraph, break it down and explain it in detail.
+DEFAULT_EXPLAIN_PROMPT = """You are a multilingual language explainer designed for comprehensive sentence, phrase, and pattern analysis.
+When the user provides a sentence, paragraph, or grammatical pattern, break it down and explain it in detail.
 
 Focus on:
 1. The overall meaning and nuance (provide an accurate translation in the target explanation language).
 2. Important vocabulary words and their specific definitions in this context.
 3. Grammar and syntax structures used.
 4. Idioms, cultural references, or expressions.
+
+INPUT PATTERNS & ELLIPSIS HANDLING:
+- Users frequently provide sentence patterns, grammatical templates, or abbreviated expressions using ellipsis or placeholders (e.g. "ABC do ...", "take ... into account", "make ... do sth", "not only ... but also ...") to save space and focus on core structures.
+- Whenever you encounter "..." or placeholders, treat them as intentional ellipses representing omitted words, clauses, or variable slots.
+- Analyze and explain the grammatical pattern, its idiomatic or syntactic function, what type of words/clauses fit into the "..." slot, and provide clear, natural example sentences showing how the pattern is completed in real-world contexts. Never reject or complain about inputs containing ellipsis or placeholder abbreviations.
 
 STRICT LANGUAGE ENFORCEMENT RULES:
 - If a Target Explanation Language is specified, you MUST write the ENTIRE analysis, vocabulary definitions, grammar breakdown, and all commentary strictly in that Target Explanation Language.
@@ -536,7 +553,7 @@ async def explain_text(text: str, session: Session, explicit_model: str = None, 
 
     system_prompt += "\n\n# MANDATORY LANGUAGE CONSTRAINTS FOR THIS REQUEST:\n" + "\n".join(lang_constraints)
     user_prompt = (
-        f"Please explain this sentence/paragraph:\n{text}\n\n"
+        f"Please explain this sentence, phrase, or pattern (note: '...' or placeholders indicate omitted words/clauses to save space):\n{text}\n\n"
         f"CRITICAL REQUIREMENT: Write the entire explanation breakdown strictly in {tgt_name}. "
         f"Do NOT write in English or any other language unless {tgt_name} is English."
     )
@@ -867,3 +884,313 @@ async def generate_title(text: str, session: Session) -> str:
         return title.strip(' "''\n')
     except:
         return "Untitled"
+
+
+DEFAULT_SIMPLE_LLM_PROMPT = """You are a fast, lightweight multilingual dictionary and language explainer designed for quick, clear reading.
+When given a word, phrase, sentence pattern, or expression:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form or root of the input term>
+
+2. If it is a word or short phrase:
+- Provide the part of speech and phonetic pronunciation (IPA).
+- Provide a clear, concise definition or translation in the Target Language.
+- Provide 1-2 natural, practical example sentences with translations.
+
+3. If it is a sentence or grammatical pattern (including placeholders or ellipsis like '...'):
+- Provide an accurate translation of the overall meaning in the Target Language.
+- Briefly explain the core structure, nuances, and how the pattern is used.
+- Provide 1-2 example sentences showing how the pattern is completed in real-world contexts.
+
+Keep your entire response clean, concise, formatted in clear Markdown with bullet points, and easy to read quickly. Avoid unnecessary verbosity.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
+
+SIMPLE_LLM_PROMPTS = {
+    "quick_glance": {
+        "id": "quick_glance",
+        "name": "⚡ Quick Glance",
+        "icon": "⚡",
+        "description": "Concise definition, IPA, translation, and practical example",
+        "prompt": DEFAULT_SIMPLE_LLM_PROMPT
+    },
+    "grammar_breakdown": {
+        "id": "grammar_breakdown",
+        "name": "🧩 Grammar & Syntax",
+        "icon": "🧩",
+        "description": "Part of speech, tense, clause structure, and syntactic role",
+        "prompt": """You are an expert linguist and grammarian providing an instant, clear grammatical breakdown.
+When given a word, phrase, sentence pattern, or expression:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form, infinitive, or root>
+
+2. Structural & Grammatical Breakdown:
+- Part of speech (noun, verb, adjective, prepositional phrase, idiom, clause, etc.).
+- Grammatical properties: tense, aspect, mood, voice, person, number, case, or transitivity if applicable.
+- Syntactic function: how it functions in the sentence (subject, predicate, object, modifier, conjunction).
+- Conjugation/inflection notes or irregular forms.
+
+3. Example Usage:
+- 1-2 clear example sentences illustrating this exact grammatical function with translations in the Target Language.
+
+Keep explanations structured in Markdown bullet points, clear, and directly to the point.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
+    },
+    "nuance_slang": {
+        "id": "nuance_slang",
+        "name": "💡 Nuance & Context",
+        "icon": "💡",
+        "description": "Colloquial usage, register, slang, tone, and cultural nuances",
+        "prompt": """You are a cultural linguist and native speaker providing nuanced insight into vocabulary and expressions.
+When given a word, phrase, slang, or expression:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form or standard dictionary equivalent>
+
+2. Nuance, Register & Tone:
+- Register: Formal, informal, colloquial, slang, vulgar, literary, or technical.
+- Emotional tone & connotation: Positive, negative, playful, sarcastic, emphatic, or neutral.
+- Subtle differences: How it differs from standard textbook synonyms.
+- Cultural context: When native speakers actually say this (and when NOT to use it).
+
+3. Natural Examples:
+- 2 real-world conversational examples showing authentic usage with translations in the Target Language.
+
+Keep the response lively, concise, formatted in clear Markdown bullet points.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
+    },
+    "simplify": {
+        "id": "simplify",
+        "name": "👶 Plain & Simple (ELI5)",
+        "icon": "👶",
+        "description": "Simple, everyday explanation with intuitive analogies",
+        "prompt": """You are a master teacher explaining concepts simply and clearly without unnecessary jargon.
+When given a word, phrase, sentence, or concept:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form>
+
+2. Plain & Simple Explanation:
+- Explain what this means in simple, everyday words that a beginner could easily understand.
+- Use a simple analogy or real-life comparison if helpful.
+- Direct, friendly translation in the Target Language.
+
+3. Simple Everyday Examples:
+- 2 short, easy-to-understand example sentences with translations.
+
+Keep it warm, ultra-clear, concise, and formatted in Markdown bullet points.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
+    },
+    "key_points": {
+        "id": "key_points",
+        "name": "📋 Key Takeaway (TL;DR)",
+        "icon": "📋",
+        "description": "Ultra-fast summary with the core meaning and bullet points",
+        "prompt": """You are an ultra-fast summarizer providing instantaneous gist.
+When given an input:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form>
+
+2. Key Takeaways:
+- **TL;DR**: 1-sentence bottom line in the Target Language.
+- **Core Meaning**: 2-3 brief bullet points explaining the essential ideas.
+- **Quick Translation**: Immediate translation of the key message.
+
+Be extremely concise, fast to read, and zero fluff.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
+    },
+    "examples": {
+        "id": "examples",
+        "name": "🗣️ Real-World Dialogues",
+        "icon": "🗣️",
+        "description": "Natural conversational dialogue examples showing authentic native usage",
+        "prompt": """You are a conversational language coach focusing on realistic usage.
+When given a word, phrase, or sentence:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form>
+
+2. Natural Conversational Dialogues:
+- Provide 2-3 realistic short dialogues (Person A & Person B) showing how native speakers use this naturally in conversation.
+- For each dialogue, provide full translation into the Target Language.
+
+3. Key Usage Tip:
+- 1 quick sentence tip on pronunciation or conversational delivery.
+
+Keep it authentic, clean, and formatted with clear Markdown.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
+    }
+}
+
+
+def get_simple_llm_custom_config(session: Session) -> dict:
+    setting = session.get(AppSetting, "SIMPLE_LLM_CUSTOM_LENSES")
+    if not setting or not setting.value:
+        return {"lenses": {}, "order": [], "deleted": []}
+    try:
+        data = json.loads(setting.value)
+        if not isinstance(data, dict):
+            return {"lenses": {}, "order": [], "deleted": []}
+        return {
+            "lenses": data.get("lenses", {}),
+            "order": data.get("order", []),
+            "deleted": data.get("deleted", [])
+        }
+    except Exception:
+        return {"lenses": {}, "order": [], "deleted": []}
+
+
+def save_simple_llm_custom_config(session: Session, config: dict):
+    setting = session.get(AppSetting, "SIMPLE_LLM_CUSTOM_LENSES")
+    val_str = json.dumps(config, ensure_ascii=False)
+    if setting:
+        setting.value = val_str
+    else:
+        setting = AppSetting(key="SIMPLE_LLM_CUSTOM_LENSES", value=val_str)
+    session.add(setting)
+    session.commit()
+    session.refresh(setting)
+
+
+def get_ordered_simple_llm_prompts(session: Session) -> list[dict]:
+    config = get_simple_llm_custom_config(session)
+    custom_lenses = config.get("lenses", {})
+    order = config.get("order", [])
+    deleted = set(config.get("deleted", []))
+
+    all_lenses = {}
+    for pid, p in SIMPLE_LLM_PROMPTS.items():
+        if pid in deleted:
+            continue
+        all_lenses[pid] = {
+            "id": p["id"],
+            "name": p["name"],
+            "icon": p.get("icon", "⚡"),
+            "description": p.get("description", ""),
+            "prompt": p["prompt"],
+            "is_builtin": True,
+            "is_custom": False
+        }
+
+    for cid, c in custom_lenses.items():
+        if cid in deleted:
+            continue
+        is_builtin = cid in SIMPLE_LLM_PROMPTS
+        all_lenses[cid] = {
+            "id": cid,
+            "name": c.get("name", cid),
+            "icon": c.get("icon", "⚡"),
+            "description": c.get("description", ""),
+            "prompt": c.get("prompt", ""),
+            "is_builtin": is_builtin,
+            "is_custom": not is_builtin
+        }
+
+    result = []
+    seen = set()
+    for pid in order:
+        if pid in all_lenses and pid not in seen:
+            result.append(all_lenses[pid])
+            seen.add(pid)
+
+    default_keys = ["quick_glance", "grammar_breakdown", "nuance_slang", "simplify", "key_points", "examples"]
+    for pid in default_keys:
+        if pid in all_lenses and pid not in seen:
+            result.append(all_lenses[pid])
+            seen.add(pid)
+
+    for pid, item in all_lenses.items():
+        if pid not in seen:
+            result.append(item)
+            seen.add(pid)
+
+    return result
+
+
+def get_simple_llm_prompt_by_key(session: Session, prompt_key: str) -> dict | None:
+    prompts = get_ordered_simple_llm_prompts(session)
+    for p in prompts:
+        if p["id"] == prompt_key:
+            return p
+    return None
+
+
+async def lookup_simple_llm(
+    text: str,
+    session: Session,
+    explicit_model: str = "inclusionai/ling-3.0-flash",
+    source_language: str = None,
+    target_language: str = None,
+    profile_id: int = 1,
+    prompt_key: str = "quick_glance",
+    custom_prompt: str = None
+) -> str:
+    active_prompt_key = prompt_key or get_simple_llm_default_prompt(session, profile_id)
+    if custom_prompt and custom_prompt.strip():
+        system_prompt = custom_prompt.strip()
+    else:
+        found_prompt = get_simple_llm_prompt_by_key(session, active_prompt_key)
+        if found_prompt and found_prompt.get("prompt"):
+            system_prompt = found_prompt["prompt"]
+        elif active_prompt_key and active_prompt_key in SIMPLE_LLM_PROMPTS:
+            system_prompt = SIMPLE_LLM_PROMPTS[active_prompt_key]["prompt"]
+        else:
+            system_prompt = DEFAULT_SIMPLE_LLM_PROMPT
+
+    model = (explicit_model or get_simple_llm_model(session, profile_id)).strip()
+
+    src_name = resolve_source_language(session, source_language, profile_id, mode="search")
+    tgt_name = resolve_target_language(session, target_language, profile_id, source_language, mode="search")
+
+    lang_constraints = [
+        f"CRITICAL LANGUAGE MANDATE FOR THIS REQUEST:",
+        f"- Target Language: {tgt_name}",
+        f"- Write all definitions, explanations, breakdowns, and example translations strictly in {tgt_name}.",
+        f"- STRICTLY FORBIDDEN: Do NOT write explanations in English or any unselected language unless {tgt_name} is English."
+    ]
+    if src_name:
+        lang_constraints.append(f"- Source Language of input: {src_name}")
+
+    system_prompt += "\n\n# MANDATORY LANGUAGE CONSTRAINTS:\n" + "\n".join(lang_constraints)
+    user_content = (
+        f"Input: [{text}]\n\n"
+        f"CRITICAL REQUIREMENT: Write definitions and explanations strictly in {tgt_name}."
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ]
+    return await execute_llm_completion(
+        session=session,
+        model=model,
+        messages=messages,
+        model_key="MAIN_MODEL",
+        profile_id=profile_id,
+        timeout=30.0
+    )

@@ -22,6 +22,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const popupMoveBtn = document.getElementById('popup-move-btn');
   const popupMoveMenu = document.getElementById('popup-move-menu');
   const popupDeleteBtn = document.getElementById('popup-delete-btn');
+  const popupSimpleLlmSaveBtn = document.getElementById('popup-simple-llm-save-btn');
+  const popupSimpleLlmPromptRow = document.getElementById('popup-simple-llm-prompt-row');
+  const popupSimpleLlmPromptSelect = document.getElementById('popup-simple-llm-prompt-select');
+  const popupSimpleLlmSetDefaultBtn = document.getElementById('popup-simple-llm-set-default-btn');
+  const popupResultPromptBar = document.getElementById('popup-result-prompt-bar');
+  const popupResultPromptSelect = document.getElementById('popup-result-prompt-select');
+  const popupResultRerunBtn = document.getElementById('popup-result-rerun-btn');
   const siteStatusBar = document.getElementById('site-status-bar');
   const siteStatusDot = document.getElementById('site-status-dot');
   const siteDomainLabel = document.getElementById('site-domain-label');
@@ -45,16 +52,68 @@ document.addEventListener('DOMContentLoaded', async () => {
   const popupSrcLangSelect = document.getElementById('popup-src-lang-select');
   const popupSwapLangBtn = document.getElementById('popup-swap-lang-btn');
   const popupTgtLangSelect = document.getElementById('popup-tgt-lang-select');
+  const llmModeStatusBar = document.getElementById('llm-mode-status-bar');
+  const activateQuickLlmBtn = document.getElementById('activate-quick-llm-btn');
+  const toggleQuickLlmBtn = document.getElementById('toggle-quick-llm-btn');
+  const quickLlmDot = document.getElementById('quick-llm-dot');
+  const quickLlmBtnText = document.getElementById('quick-llm-btn-text');
+  const activateLlmBtn = document.getElementById('activate-llm-btn');
+  const toggleLlmModeBtn = document.getElementById('toggle-llm-mode-btn');
+  const llmModeDot = document.getElementById('llm-mode-dot');
+  const llmModeBtnText = document.getElementById('llm-mode-btn-text');
 
   let config = await chrome.storage.local.get(null);
   let profiles = [];
   let currentPopupResult = null;
   let currentSiteDomain = '';
   let selectedHistoryMode = 'search';
+  let selectedSearchMode = config.defaultMode || 'machine_translation';
 
   // Apply saved theme
   applyTheme(config.theme || 'tokyonight');
-  if (themeSelect) themeSelect.value = config.theme || 'tokyonight';
+
+  const BUILTIN_SIMPLE_LLM_PRESETS = [
+    { id: 'quick_glance', icon: '⚡', name: 'Quick Glance' },
+    { id: 'grammar_breakdown', icon: '🧩', name: 'Grammar & Syntax' },
+    { id: 'nuance_slang', icon: '💡', name: 'Nuance & Context' },
+    { id: 'simplify', icon: '👶', name: 'Plain & Simple (ELI5)' },
+    { id: 'key_points', icon: '📋', name: 'Key Takeaways' },
+    { id: 'examples', icon: '🗣️', name: 'Real Dialogues' }
+  ];
+
+  function populatePopupPromptSelects(promptsList, activeKey) {
+    const list = (promptsList && promptsList.length > 0) ? promptsList : BUILTIN_SIMPLE_LLM_PRESETS;
+    const key = activeKey || config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance';
+    const html = list.map(p => {
+      const icon = p.icon || '⚡';
+      const label = p.name ? (p.name.includes(icon) ? p.name : `${icon} ${p.name}`) : p.id;
+      return `<option value="${escapeHtml(p.id)}">${escapeHtml(label)}</option>`;
+    }).join('');
+
+    if (popupSimpleLlmPromptSelect) {
+      popupSimpleLlmPromptSelect.innerHTML = html;
+      popupSimpleLlmPromptSelect.value = key;
+      if (!popupSimpleLlmPromptSelect.value && list[0]) {
+        popupSimpleLlmPromptSelect.value = list[0].id;
+      }
+    }
+    if (popupResultPromptSelect) {
+      popupResultPromptSelect.innerHTML = html;
+      popupResultPromptSelect.value = key;
+      if (!popupResultPromptSelect.value && list[0]) {
+        popupResultPromptSelect.value = list[0].id;
+      }
+    }
+  }
+
+  populatePopupPromptSelects(config.simpleLlmPrompts);
+
+  if (popupSimpleLlmPromptRow) {
+    popupSimpleLlmPromptRow.style.display = (selectedSearchMode === 'simple_llm') ? 'flex' : 'none';
+  }
+  if (popupResultPromptBar) {
+    popupResultPromptBar.style.display = 'none';
+  }
 
   // Apply quick pause UI
   function updatePauseUI() {
@@ -226,6 +285,176 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Quick LLM & Full LLM Mode UI & Toggles
+  function updateLlmModeUI() {
+    if (config.showLlmModeInPopup === false) {
+      if (llmModeStatusBar) llmModeStatusBar.style.display = 'none';
+      return;
+    } else {
+      if (llmModeStatusBar) llmModeStatusBar.style.display = 'flex';
+    }
+
+    const currentMode = config.defaultMode || 'machine_translation';
+    const isQuickLlm = currentMode === 'simple_llm';
+    const isFullLlm = currentMode !== 'machine_translation' && currentMode !== 'simple_llm';
+
+    // Quick LLM status
+    if (toggleQuickLlmBtn && quickLlmDot && quickLlmBtnText) {
+      if (isQuickLlm) {
+        quickLlmDot.className = 'persistent-dot quick-active';
+        quickLlmBtnText.textContent = 'ON';
+        toggleQuickLlmBtn.className = 'persistent-toggle-btn quick-toggle-btn is-active';
+        toggleQuickLlmBtn.title = 'Quick LLM: ON (Ling Flash) - click to switch default back to Simple MT';
+      } else {
+        quickLlmDot.className = 'persistent-dot';
+        quickLlmBtnText.textContent = 'OFF';
+        toggleQuickLlmBtn.className = 'persistent-toggle-btn quick-toggle-btn';
+        toggleQuickLlmBtn.title = 'Quick LLM: OFF (Simple MT active) - click to turn ON Quick LLM Mode';
+      }
+    }
+
+    // Full LLM status
+    if (toggleLlmModeBtn && llmModeDot && llmModeBtnText) {
+      if (isFullLlm) {
+        llmModeDot.className = 'persistent-dot active';
+        llmModeBtnText.textContent = 'ON';
+        toggleLlmModeBtn.className = 'persistent-toggle-btn llm-toggle-btn is-active';
+        const modeName = currentMode === 'search' ? 'Word' : currentMode;
+        toggleLlmModeBtn.title = `Full LLM Mode: ON (${modeName}) - click to switch default back to Simple MT`;
+      } else {
+        llmModeDot.className = 'persistent-dot';
+        llmModeBtnText.textContent = 'OFF';
+        toggleLlmModeBtn.className = 'persistent-toggle-btn llm-toggle-btn';
+        toggleLlmModeBtn.title = 'Full LLM Mode: OFF (Simple MT active) - click to turn ON Full LLM Mode';
+      }
+    }
+  }
+
+  updateLlmModeUI();
+
+  if (toggleQuickLlmBtn) {
+    toggleQuickLlmBtn.addEventListener('click', async () => {
+      const isCurrentlyQuick = config.defaultMode === 'simple_llm';
+      const newMode = isCurrentlyQuick ? 'machine_translation' : 'simple_llm';
+      config.defaultMode = newMode;
+      await chrome.storage.local.set({ defaultMode: newMode });
+      updateLlmModeUI();
+
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs && tabs[0];
+        if (activeTab?.id) {
+          chrome.tabs.sendMessage(activeTab.id, {
+            action: 'SET_DEFAULT_MODE',
+            mode: newMode
+          }).catch(() => {});
+        }
+      });
+
+      selectedSearchMode = newMode;
+      searchModePills.forEach(p => p.classList.toggle('active', p.dataset.mode === newMode));
+      if (newMode === 'machine_translation') {
+        quickSearchInput.placeholder = 'Type text to translate offline (NLLB)...';
+      } else {
+        quickSearchInput.placeholder = 'Type word or text for Ling Flash (Not saved)...';
+      }
+      syncPopupLanguageRow();
+    });
+  }
+
+  if (activateQuickLlmBtn) {
+    activateQuickLlmBtn.addEventListener('click', async () => {
+      if (config.defaultMode !== 'simple_llm') {
+        config.defaultMode = 'simple_llm';
+        await chrome.storage.local.set({ defaultMode: 'simple_llm' });
+        updateLlmModeUI();
+      }
+
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs && tabs[0];
+        if (activeTab?.id) {
+          chrome.tabs.sendMessage(activeTab.id, {
+            action: 'SET_DEFAULT_MODE',
+            mode: 'simple_llm'
+          }).catch(() => {});
+
+          chrome.runtime.sendMessage({ action: 'SET_TAB_PERSISTENT', tabId: activeTab.id, persistent: true }, (res) => {
+            if (res && res.success) {
+              activeTabPersistent = true;
+              updatePersistentUI();
+            }
+          });
+        }
+      });
+
+      const term = (quickSearchInput ? quickSearchInput.value : '').trim();
+      sendActivatePersistentWindowToTab(term, 'simple_llm');
+    });
+  }
+
+  if (toggleLlmModeBtn) {
+    toggleLlmModeBtn.addEventListener('click', async () => {
+      const isCurrentlyFullLlm = config.defaultMode && config.defaultMode !== 'machine_translation' && config.defaultMode !== 'simple_llm';
+      const newMode = isCurrentlyFullLlm ? 'machine_translation' : 'search';
+      config.defaultMode = newMode;
+      await chrome.storage.local.set({ defaultMode: newMode });
+      updateLlmModeUI();
+
+      // Broadcast mode switch to active tab so any currently displayed card switches immediately
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs && tabs[0];
+        if (activeTab?.id) {
+          chrome.tabs.sendMessage(activeTab.id, {
+            action: 'SET_DEFAULT_MODE',
+            mode: newMode
+          }).catch(() => {});
+        }
+      });
+
+      // Sync the search mode pills in popup
+      selectedSearchMode = newMode;
+      searchModePills.forEach(p => p.classList.toggle('active', p.dataset.mode === newMode));
+      if (newMode === 'machine_translation') {
+        quickSearchInput.placeholder = 'Type text to translate offline (NLLB)...';
+      } else {
+        quickSearchInput.placeholder = 'Type a word to define & save...';
+      }
+      syncPopupLanguageRow();
+    });
+  }
+
+  if (activateLlmBtn) {
+    activateLlmBtn.addEventListener('click', async () => {
+      // Ensure default mode is set to search if currently MT or simple_llm
+      const isFullLlm = config.defaultMode && config.defaultMode !== 'machine_translation' && config.defaultMode !== 'simple_llm';
+      if (!isFullLlm) {
+        config.defaultMode = 'search';
+        await chrome.storage.local.set({ defaultMode: 'search' });
+        updateLlmModeUI();
+      }
+
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs && tabs[0];
+        if (activeTab?.id) {
+          chrome.tabs.sendMessage(activeTab.id, {
+            action: 'SET_DEFAULT_MODE',
+            mode: 'search'
+          }).catch(() => {});
+
+          chrome.runtime.sendMessage({ action: 'SET_TAB_PERSISTENT', tabId: activeTab.id, persistent: true }, (res) => {
+            if (res && res.success) {
+              activeTabPersistent = true;
+              updatePersistentUI();
+            }
+          });
+        }
+      });
+
+      const term = (quickSearchInput ? quickSearchInput.value : '').trim();
+      const mode = (selectedSearchMode && selectedSearchMode !== 'machine_translation' && selectedSearchMode !== 'simple_llm') ? selectedSearchMode : 'search';
+      sendActivatePersistentWindowToTab(term, mode);
+    });
+  }
+
   // Apply saved trigger mode
   const currentTrig = config.triggerMode || 'bubble';
   const trigRadio = document.querySelector(`input[name="triggerMode"][value="${currentTrig}"]`);
@@ -363,11 +592,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   const DEFAULT_LANGS = ['🌐 Auto', '🇺🇸 EN', '🇩🇪 DE', '🇻🇳 VI', '🇫🇷 FR', '🇪🇸 ES', '🇯🇵 JA', '🇨🇳 ZH', '🇰🇷 KO'];
 
   function populatePopupLangSelects(currentSrc, currentTgt) {
+    let srcLangs = [...DEFAULT_LANGS];
+    if (currentSrc && !srcLangs.includes(currentSrc)) {
+      srcLangs.push(currentSrc);
+    }
+    let tgtLangs = DEFAULT_LANGS.filter(l => !l.includes('Auto'));
+    if (currentTgt && !tgtLangs.includes(currentTgt)) {
+      tgtLangs.push(currentTgt);
+    }
+
     if (popupSrcLangSelect) {
-      popupSrcLangSelect.innerHTML = DEFAULT_LANGS.map(l => `<option value="${l}" ${l === currentSrc ? 'selected' : ''}>${l}</option>`).join('');
+      popupSrcLangSelect.innerHTML = srcLangs.map(l => `<option value="${l}" ${l === currentSrc ? 'selected' : ''}>${l}</option>`).join('');
     }
     if (popupTgtLangSelect) {
-      popupTgtLangSelect.innerHTML = DEFAULT_LANGS.filter(l => !l.includes('Auto')).map(l => `<option value="${l}" ${l === currentTgt ? 'selected' : ''}>${l}</option>`).join('');
+      popupTgtLangSelect.innerHTML = tgtLangs.map(l => `<option value="${l}" ${l === currentTgt ? 'selected' : ''}>${l}</option>`).join('');
     }
   }
 
@@ -383,7 +621,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const modeType = appSettings[`correctionModeType_${pid}`] || 'both';
         const isBoth = modeType === 'both';
         if (popupModetypeLabel) {
-          popupModetypeLabel.textContent = isBoth ? 'Correction + Translation' : 'Correction Only';
+          popupModetypeLabel.textContent = isBoth ? '✍️ Correct + Translate' : '✍️ Correct Only';
         }
         popupModetypeBtn.style.background = isBoth ? 'rgba(59, 130, 246, 0.15)' : 'rgba(34, 197, 94, 0.15)';
         popupModetypeBtn.style.borderColor = isBoth ? 'rgba(59, 130, 246, 0.4)' : 'rgba(34, 197, 94, 0.4)';
@@ -395,17 +633,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         appSettings[`correctionSourceLang_${pid}`] || '🌐 Auto',
         appSettings[`correctionTargetLang_${pid}`] || '🇺🇸 EN'
       );
-    } else if (selectedSearchMode === 'translation') {
+    } else if (['explain', 'translation', 'compare', 'search', 'simple_llm'].includes(selectedSearchMode)) {
       popupLangRow.style.display = 'flex';
       if (popupModetypeBtn) popupModetypeBtn.style.display = 'none';
       if (popupTgtLangSelect) popupTgtLangSelect.style.display = 'inline-block';
       if (popupSwapLangBtn) popupSwapLangBtn.style.display = 'inline-block';
-      populatePopupLangSelects(
-        appSettings[`translationSourceLang_${pid}`] || '🌐 Auto',
-        appSettings[`translationTargetLang_${pid}`] || '🇺🇸 EN'
-      );
+
+      const defaultTgt = appSettings[`searchTargetLang_${pid}`] || appSettings['SEARCH_TARGET_LANG'] || '🇺🇸 EN';
+      const defaultSrc = '🌐 Auto';
+
+      let srcVal = appSettings[`${selectedSearchMode}SourceLang_${pid}`];
+      let tgtVal = appSettings[`${selectedSearchMode}TargetLang_${pid}`];
+
+      if (selectedSearchMode === 'search') {
+        srcVal = srcVal || appSettings['SEARCH_SOURCE_LANG'] || defaultSrc;
+        tgtVal = tgtVal || appSettings['SEARCH_TARGET_LANG'] || defaultTgt;
+      } else {
+        srcVal = srcVal || defaultSrc;
+        tgtVal = tgtVal || defaultTgt;
+      }
+
+      populatePopupLangSelects(srcVal, tgtVal);
     } else {
       popupLangRow.style.display = 'none';
+    }
+
+    if (popupSimpleLlmPromptRow) {
+      popupSimpleLlmPromptRow.style.display = (selectedSearchMode === 'simple_llm') ? 'flex' : 'none';
     }
   }
 
@@ -427,11 +681,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     popupSrcLangSelect.addEventListener('change', async (e) => {
       const pid = config.activeProfileId || 1;
       const appSettings = config.appSettings || {};
-      const key = selectedSearchMode === 'correction' ? `correctionSourceLang_${pid}` : `translationSourceLang_${pid}`;
+      const key = `${selectedSearchMode}SourceLang_${pid}`;
       appSettings[key] = e.target.value;
+      if (selectedSearchMode === 'search') {
+        appSettings['SEARCH_SOURCE_LANG'] = e.target.value;
+      }
       config.appSettings = appSettings;
       await chrome.storage.local.set({ appSettings });
       callBackend('/api/settings', 'POST', { key, value: e.target.value }).catch(() => {});
+      if (selectedSearchMode === 'search') {
+        callBackend('/api/settings', 'POST', { key: 'SEARCH_SOURCE_LANG', value: e.target.value }).catch(() => {});
+      }
     });
   }
 
@@ -439,11 +699,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     popupTgtLangSelect.addEventListener('change', async (e) => {
       const pid = config.activeProfileId || 1;
       const appSettings = config.appSettings || {};
-      const key = selectedSearchMode === 'correction' ? `correctionTargetLang_${pid}` : `translationTargetLang_${pid}`;
+      const key = `${selectedSearchMode}TargetLang_${pid}`;
       appSettings[key] = e.target.value;
+      if (selectedSearchMode === 'search') {
+        appSettings['SEARCH_TARGET_LANG'] = e.target.value;
+      }
       config.appSettings = appSettings;
       await chrome.storage.local.set({ appSettings });
       callBackend('/api/settings', 'POST', { key, value: e.target.value }).catch(() => {});
+      if (selectedSearchMode === 'search') {
+        callBackend('/api/settings', 'POST', { key: 'SEARCH_TARGET_LANG', value: e.target.value }).catch(() => {});
+      }
     });
   }
 
@@ -451,28 +717,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     popupSwapLangBtn.addEventListener('click', async () => {
       const pid = config.activeProfileId || 1;
       const appSettings = config.appSettings || {};
-      const srcKey = selectedSearchMode === 'correction' ? `correctionSourceLang_${pid}` : `translationSourceLang_${pid}`;
-      const tgtKey = selectedSearchMode === 'correction' ? `correctionTargetLang_${pid}` : `translationTargetLang_${pid}`;
-      const oldSrc = appSettings[srcKey] || '🌐 Auto';
-      const oldTgt = appSettings[tgtKey] || '🇺🇸 EN';
+      const srcKey = `${selectedSearchMode}SourceLang_${pid}`;
+      const tgtKey = `${selectedSearchMode}TargetLang_${pid}`;
+      const defaultTgt = appSettings[`searchTargetLang_${pid}`] || appSettings['SEARCH_TARGET_LANG'] || '🇺🇸 EN';
+      const oldSrc = appSettings[srcKey] || (selectedSearchMode === 'search' ? (appSettings['SEARCH_SOURCE_LANG'] || '🌐 Auto') : '🌐 Auto');
+      const oldTgt = appSettings[tgtKey] || (selectedSearchMode === 'search' ? defaultTgt : defaultTgt);
       if (oldSrc.includes('Auto')) return;
       appSettings[srcKey] = oldTgt;
       appSettings[tgtKey] = oldSrc;
+      if (selectedSearchMode === 'search') {
+        appSettings['SEARCH_SOURCE_LANG'] = oldTgt;
+        appSettings['SEARCH_TARGET_LANG'] = oldSrc;
+      }
       config.appSettings = appSettings;
       await chrome.storage.local.set({ appSettings });
       callBackend('/api/settings', 'POST', { key: srcKey, value: oldTgt }).catch(() => {});
       callBackend('/api/settings', 'POST', { key: tgtKey, value: oldSrc }).catch(() => {});
+      if (selectedSearchMode === 'search') {
+        callBackend('/api/settings', 'POST', { key: 'SEARCH_SOURCE_LANG', value: oldTgt }).catch(() => {});
+        callBackend('/api/settings', 'POST', { key: 'SEARCH_TARGET_LANG', value: oldSrc }).catch(() => {});
+      }
       syncPopupLanguageRow();
     });
   }
 
   // Search Mode Selection
-  let selectedSearchMode = config.defaultMode || 'machine_translation';
+  selectedSearchMode = config.defaultMode || 'machine_translation';
   const searchModePills = document.querySelectorAll('#search-mode-pills .search-mode-pill');
   searchModePills.forEach(p => p.classList.toggle('active', p.dataset.mode === selectedSearchMode));
   if (selectedSearchMode === 'machine_translation') {
     quickSearchInput.placeholder = 'Type text to translate offline (NLLB)...';
   }
+  syncPopupLanguageRow();
   searchModePills.forEach(pill => {
     pill.addEventListener('click', () => {
       const mode = pill.dataset.mode;
@@ -488,6 +764,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         quickSearchInput.placeholder = 'Type text to correct / translate...';
       } else if (mode === 'machine_translation') {
         quickSearchInput.placeholder = 'Type text to translate offline (NLLB)...';
+      } else if (mode === 'simple_llm') {
+        quickSearchInput.placeholder = 'Type word or text for Ling Flash (Not saved)...';
       } else if (mode === 'compare') {
         quickSearchInput.placeholder = 'Type words to compare (e.g. affect, effect)...';
       }
@@ -517,16 +795,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     openWordOnActivePage(term, null, selectedSearchMode);
   });
 
-  async function performPopupSearch(term, mode = 'search') {
+  async function performPopupSearch(term, mode = 'search', customPromptKey = null) {
     quickResultBox.style.display = 'block';
     resultTerm.textContent = term;
     resultLang.textContent = 'Searching...';
-    resultContent.innerHTML = `<div style="opacity:0.6; padding:8px 0;">Looking up in AI Dict (${mode}) and saving to profile...</div>`;
+    if (popupResultPromptBar) popupResultPromptBar.style.display = 'none';
+    resultContent.innerHTML = mode === 'simple_llm'
+      ? `<div style="opacity:0.6; padding:8px 0;">Looking up with Quick LLM (ephemeral, no-save)...</div>`
+      : mode === 'machine_translation'
+      ? `<div style="opacity:0.6; padding:8px 0;">Translating offline with Meta NLLB-200...</div>`
+      : `<div style="opacity:0.6; padding:8px 0;">Looking up in AI Dict (${mode}) and saving to profile...</div>`;
     currentPopupResult = null;
     if (popupMoveBtn) popupMoveBtn.style.display = 'none';
     if (popupMoveMenu) popupMoveMenu.style.display = 'none';
     if (popupOpenPageBtn) popupOpenPageBtn.style.display = 'none';
     if (popupDeleteBtn) popupDeleteBtn.style.display = 'none';
+    if (popupSimpleLlmSaveBtn) popupSimpleLlmSaveBtn.style.display = 'none';
 
     try {
       const pid = config.activeProfileId || 1;
@@ -587,6 +871,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           profile_id: pid,
           session_id: config.activeSessionId || undefined
         };
+      } else if (mode === 'simple_llm') {
+        endpoint = '/api/simple-llm/lookup';
+        const chosenPrompt = customPromptKey || (popupSimpleLlmPromptSelect ? popupSimpleLlmPromptSelect.value : (config.simpleLlmDefaultPrompt || 'quick_glance'));
+        requestBody = {
+          text: term,
+          source_lang: getLang('simple_llm', 'SourceLang') || getLang('search', 'SourceLang') || undefined,
+          target_lang: getLang('simple_llm', 'TargetLang') || getLang('search', 'TargetLang') || undefined,
+          model: config.simpleLlmModel || 'inclusionai/ling-3.0-flash',
+          prompt_key: chosenPrompt,
+          profile_id: pid
+        };
       } else if (mode === 'machine_translation') {
         endpoint = '/api/mt/translate';
         requestBody = {
@@ -620,13 +915,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (mode === 'correction') {
         item = res.correction || res;
         exp = assistantChat ? assistantChat.content : (item.explanation || '');
+      } else if (mode === 'simple_llm') {
+        item = { id: null, text: term, language: res.language || '' };
+        exp = res.content || (assistantChat ? assistantChat.content : '');
       } else if (mode === 'machine_translation') {
         item = { id: null, text: term, source_lang: res.source_lang, target_lang: res.target_lang };
         exp = res.translated_text || '';
       }
 
       resultTerm.textContent = item?.term || item?.terms || item?.text || term;
-      resultLang.textContent = mode === 'search' ? (item?.language || 'Saved') : mode === 'explain' ? 'Explain' : mode === 'translation' ? 'Translate' : mode === 'correction' ? (item?.mode_type === 'correction_only' ? 'Correct Only' : 'Correct + Translate') : mode === 'machine_translation' ? `⚡ MT (${res.source_lang || 'Auto'} → ${res.target_lang || 'EN'})` : 'Compare';
+      resultLang.textContent = mode === 'search' ? (item?.language || 'Saved') : mode === 'explain' ? 'Explain' : mode === 'translation' ? 'Translate' : mode === 'correction' ? (item?.mode_type === 'correction_only' ? 'Correct Only' : 'Correct + Translate') : mode === 'machine_translation' ? `⚡ MT (${res.source_lang || 'Auto'} → ${res.target_lang || 'EN'})` : mode === 'simple_llm' ? `⚡ Ling Flash (Not saved)` : 'Compare';
+
+      if (popupResultPromptBar) {
+        if (mode === 'simple_llm') {
+          popupResultPromptBar.style.display = 'flex';
+          const activePrompt = requestBody.prompt_key || config.simpleLlmDefaultPrompt || 'quick_glance';
+          if (popupResultPromptSelect) {
+            popupResultPromptSelect.value = activePrompt;
+          }
+        } else {
+          popupResultPromptBar.style.display = 'none';
+        }
+      }
 
       if (mode === 'machine_translation') {
         resultContent.innerHTML = `
@@ -647,6 +957,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         mtFooter.style.display = (mode === 'machine_translation') ? 'block' : 'none';
       }
 
+      if (popupSimpleLlmSaveBtn) {
+        if (mode === 'simple_llm') {
+          popupSimpleLlmSaveBtn.style.display = 'inline-flex';
+          popupSimpleLlmSaveBtn.disabled = false;
+          popupSimpleLlmSaveBtn.innerHTML = '<span>💾 Save</span>';
+          popupSimpleLlmSaveBtn.onclick = async () => {
+            popupSimpleLlmSaveBtn.disabled = true;
+            popupSimpleLlmSaveBtn.innerHTML = '<span>Saving...</span>';
+            try {
+              const saveRes = await callBackend('/api/simple-llm/save', 'POST', {
+                text: currentPopupResult?.term || term,
+                content: exp,
+                source_lang: currentPopupResult?.language || undefined,
+                profile_id: pid,
+                session_id: config.activeSessionId || undefined
+              });
+              popupSimpleLlmSaveBtn.innerHTML = '<span>✓ Saved</span>';
+              resultLang.textContent = '✓ Saved to Profile';
+              if (saveRes.id) {
+                currentPopupResult.id = saveRes.id;
+              }
+              if (popupDeleteBtn) popupDeleteBtn.style.display = 'inline-flex';
+              loadRecentWords(config.activeProfileId, selectedHistoryMode);
+            } catch (err) {
+              popupSimpleLlmSaveBtn.disabled = false;
+              popupSimpleLlmSaveBtn.innerHTML = '<span>Retry Save</span>';
+              alert(`Failed to save: ${err.message}`);
+            }
+          };
+        } else {
+          popupSimpleLlmSaveBtn.style.display = 'none';
+        }
+      }
+
       currentPopupResult = {
         mode: mode,
         id: item?.id,
@@ -661,6 +1005,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (popupMoveBtn) popupMoveBtn.style.display = 'none';
       if (popupOpenPageBtn) popupOpenPageBtn.style.display = 'none';
       if (popupDeleteBtn) popupDeleteBtn.style.display = 'none';
+      if (popupSimpleLlmSaveBtn) popupSimpleLlmSaveBtn.style.display = 'none';
+      if (popupResultPromptBar) popupResultPromptBar.style.display = 'none';
       const mtFooter = document.getElementById('popup-mt-footer');
       if (mtFooter) mtFooter.style.display = 'none';
     }
@@ -743,12 +1089,74 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const popupQuickLlmBtn = document.getElementById('popup-quick-llm-btn');
+  if (popupQuickLlmBtn) {
+    popupQuickLlmBtn.addEventListener('click', () => {
+      selectedSearchMode = 'simple_llm';
+      searchModePills.forEach(p => p.classList.toggle('active', p.dataset.mode === 'simple_llm'));
+      syncPopupLanguageRow();
+      const term = (quickSearchInput ? quickSearchInput.value : '').trim() || currentPopupResult?.term;
+      if (term) {
+        quickSearchInput.value = term;
+        performPopupSearch(term, 'simple_llm');
+      }
+    });
+  }
+
+  if (popupSimpleLlmPromptSelect) {
+    popupSimpleLlmPromptSelect.addEventListener('change', () => {
+      const chosen = popupSimpleLlmPromptSelect.value;
+      config.simpleLlmActivePrompt = chosen;
+      chrome.storage.local.set({ simpleLlmActivePrompt: chosen });
+      if (popupResultPromptSelect) popupResultPromptSelect.value = chosen;
+    });
+  }
+
+  if (popupSimpleLlmSetDefaultBtn && popupSimpleLlmPromptSelect) {
+    popupSimpleLlmSetDefaultBtn.addEventListener('click', async () => {
+      const chosen = popupSimpleLlmPromptSelect.value;
+      config.simpleLlmDefaultPrompt = chosen;
+      config.simpleLlmActivePrompt = chosen;
+      await chrome.storage.local.set({ simpleLlmDefaultPrompt: chosen, simpleLlmActivePrompt: chosen });
+      popupSimpleLlmSetDefaultBtn.textContent = '★ Saved!';
+      setTimeout(() => {
+        popupSimpleLlmSetDefaultBtn.textContent = '★ Default';
+      }, 1500);
+    });
+  }
+
+  if (popupResultRerunBtn && popupResultPromptSelect) {
+    popupResultRerunBtn.addEventListener('click', () => {
+      const term = currentPopupResult?.term || (quickSearchInput ? quickSearchInput.value : '').trim();
+      const chosenPrompt = popupResultPromptSelect.value;
+      config.simpleLlmActivePrompt = chosenPrompt;
+      chrome.storage.local.set({ simpleLlmActivePrompt: chosenPrompt });
+      if (popupSimpleLlmPromptSelect) popupSimpleLlmPromptSelect.value = chosenPrompt;
+      if (term) {
+        performPopupSearch(term, 'simple_llm', chosenPrompt);
+      }
+    });
+  }
+
+  if (popupResultPromptSelect) {
+    popupResultPromptSelect.addEventListener('change', () => {
+      const term = currentPopupResult?.term || (quickSearchInput ? quickSearchInput.value : '').trim();
+      const chosenPrompt = popupResultPromptSelect.value;
+      config.simpleLlmActivePrompt = chosenPrompt;
+      chrome.storage.local.set({ simpleLlmActivePrompt: chosenPrompt });
+      if (popupSimpleLlmPromptSelect) popupSimpleLlmPromptSelect.value = chosenPrompt;
+      if (term) {
+        performPopupSearch(term, 'simple_llm', chosenPrompt);
+      }
+    });
+  }
+
   const popupReturnLlmBtn = document.getElementById('popup-return-llm-btn');
   if (popupReturnLlmBtn) {
     popupReturnLlmBtn.addEventListener('click', () => {
       selectedSearchMode = 'search';
       searchModePills.forEach(p => p.classList.toggle('active', p.dataset.mode === 'search'));
-      syncPopupLangRow();
+      syncPopupLanguageRow();
       const term = (quickSearchInput ? quickSearchInput.value : '').trim() || currentPopupResult?.term;
       if (term) {
         quickSearchInput.value = term;
@@ -855,6 +1263,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (settingsData && settingsData.settings) {
             config.appSettings = settingsData.settings;
             await chrome.storage.local.set({ appSettings: settingsData.settings });
+          }
+        } catch (e) {}
+
+        try {
+          const promptData = await callBackend('/api/simple-llm/prompts');
+          if (Array.isArray(promptData) && promptData.length > 0) {
+            config.simpleLlmPrompts = promptData;
+            await chrome.storage.local.set({ simpleLlmPrompts: promptData });
+            populatePopupPromptSelects(promptData);
           }
         } catch (e) {}
 

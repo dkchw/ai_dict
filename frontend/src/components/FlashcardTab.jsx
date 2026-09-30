@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import MarkdownRenderer from './MarkdownRenderer';
 import StarRating from './StarRating';
 import {
   Layers, Search, GitCompare, MessageSquare, Globe, Star, Sparkles,
@@ -1233,9 +1232,9 @@ export default function FlashcardTab({
                       {isUser ? (
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                       ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <MarkdownRenderer>
                           {msg.content}
-                        </ReactMarkdown>
+                        </MarkdownRenderer>
                       )}
                     </div>
                     <span className="text-[10px] text-gray-400 px-1 mt-0.5">
@@ -2040,9 +2039,9 @@ export default function FlashcardTab({
                           >
                             {currentPracticeCard.content ? (
                               <>
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                <MarkdownRenderer>
                                   {currentPracticeCard.content}
-                                </ReactMarkdown>
+                                </MarkdownRenderer>
 
                                 <div className="break-inside-avoid mt-8 p-5 rounded-2xl bg-gray-50/80 dark:bg-gray-850/80 border border-dashed border-gray-200 dark:border-gray-800 flex flex-col items-center justify-center text-center space-y-2 select-none">
                                   <div className="w-8 h-8 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-500 flex items-center justify-center border border-amber-200/50 dark:border-amber-800/50">
@@ -2071,9 +2070,9 @@ export default function FlashcardTab({
                             }}
                           >
                             {currentPracticeCard.content ? (
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              <MarkdownRenderer>
                                 {currentPracticeCard.content}
-                              </ReactMarkdown>
+                              </MarkdownRenderer>
                             ) : (
                               <p className="text-gray-400 italic">No explanation found for this item.</p>
                             )}
@@ -2555,9 +2554,9 @@ export default function FlashcardTab({
                               >
                                 {currentPracticeCard.content ? (
                                   <>
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    <MarkdownRenderer>
                                       {currentPracticeCard.content}
-                                    </ReactMarkdown>
+                                    </MarkdownRenderer>
 
                                     {/* Balanced finisher */}
                                     <div className="break-inside-avoid mt-8 p-5 rounded-2xl bg-gray-50/80 dark:bg-gray-850/80 border border-dashed border-gray-200 dark:border-gray-800 flex flex-col items-center justify-center text-center space-y-2 select-none">
@@ -2587,9 +2586,9 @@ export default function FlashcardTab({
                               }}
                             >
                               {currentPracticeCard.content ? (
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                <MarkdownRenderer>
                                   {currentPracticeCard.content}
-                                </ReactMarkdown>
+                                </MarkdownRenderer>
                               ) : (
                                 <p className="text-gray-400 italic">No explanation found for this item.</p>
                               )}
@@ -2785,9 +2784,9 @@ export default function FlashcardTab({
                     {/* Content Preview (first output) */}
                     <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-3 text-xs text-gray-700 dark:text-gray-300 font-sans max-h-36 overflow-y-auto markdown-body leading-relaxed border border-gray-100 dark:border-gray-800/80 mb-3">
                       {card.content ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <MarkdownRenderer>
                           {card.content}
-                        </ReactMarkdown>
+                        </MarkdownRenderer>
                       ) : (
                         <span className="italic text-gray-400">No output content available.</span>
                       )}

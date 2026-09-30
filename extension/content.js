@@ -23,6 +23,7 @@
     simpleMtWidth: 480,
     simpleMtHeight: 380,
     defaultMode: 'machine_translation',
+    simpleLlmModel: 'inclusionai/ling-3.0-flash',
     autoDetectSentence: true,
     cardPlacement: 'auto', // 'auto', 'side', 'below', 'above'
     persistentWindow: false, // Default: false - keep floating card open across lookups
@@ -55,6 +56,22 @@
   let isSecondaryCardOpen = false;
   let secondaryLookupToken = 0;
   let cardMouseUpTimer = null;
+
+  const SIMPLE_LLM_PROMPTS = [
+    { id: 'quick_glance', name: '⚡ Quick Glance', desc: 'Definition, IPA & practical example' },
+    { id: 'grammar_breakdown', name: '🧩 Grammar & Syntax', desc: 'Part of speech, tense & role' },
+    { id: 'nuance_slang', name: '💡 Nuance & Context', desc: 'Colloquial usage & cultural context' },
+    { id: 'simplify', name: '👶 Plain & Simple', desc: 'Simple everyday explanation (ELI5)' },
+    { id: 'key_points', name: '📋 Key Takeaway', desc: 'Ultra-fast 1-sentence TL;DR' },
+    { id: 'examples', name: '🗣️ Dialogues', desc: 'Real-world conversational examples' }
+  ];
+
+  function getActiveSimpleLlmPrompts() {
+    if (config && Array.isArray(config.simpleLlmPrompts) && config.simpleLlmPrompts.length > 0) {
+      return config.simpleLlmPrompts;
+    }
+    return SIMPLE_LLM_PROMPTS;
+  }
 
   function isExtensionValid() {
     try {
@@ -117,7 +134,7 @@
           if (items) {
             const { persistentWindow, ...rest } = items;
             config = { ...config, ...rest };
-            if (!items.defaultMode || items.defaultMode === 'search') {
+            if (!items.defaultMode) {
               config.defaultMode = 'machine_translation';
             }
           }
@@ -263,14 +280,21 @@
       if (targetParent && containerEl.parentNode !== targetParent) {
         targetParent.appendChild(containerEl);
       }
+      // Purge any accidental duplicate roots in the DOM
+      const duplicateRoots = document.querySelectorAll('#ai-dict-extension-root');
+      duplicateRoots.forEach(el => {
+        if (el !== containerEl && el.parentNode) {
+          el.parentNode.removeChild(el);
+        }
+      });
       return;
     }
-    const existing = document.getElementById('ai-dict-extension-root');
-    if (existing && existing.parentNode) {
-      existing.parentNode.removeChild(existing);
-      containerEl = null;
-      shadowRoot = null;
-    }
+    const existingRoots = document.querySelectorAll('#ai-dict-extension-root');
+    existingRoots.forEach(el => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    containerEl = null;
+    shadowRoot = null;
 
     containerEl = document.createElement('div');
     containerEl.id = 'ai-dict-extension-root';
@@ -345,8 +369,14 @@
       if (explicitTerm) {
         openCardAtRect(null, explicitTerm, chosenMode);
       } else if (isCardOpen && cardEl && cardEl.parentNode) {
-        updatePinButtonUI();
-        focusCardSearchInput();
+        if (chosenMode !== 'machine_translation' && cardEl.classList.contains('simple-mt-card')) {
+          switchToFullFeatureMode(currentSelectionText, chosenMode);
+        } else if (chosenMode === 'machine_translation' && !cardEl.classList.contains('simple-mt-card')) {
+          switchToSimpleMtMode(currentSelectionText, lastSelectionRect);
+        } else {
+          updatePinButtonUI();
+          focusCardSearchInput();
+        }
       } else {
         const sel = window.getSelection();
         const text = (sel ? sel.toString() : '').trim();
@@ -372,6 +402,17 @@
       if (sendResponse) sendResponse({ success: true, persistent: config.persistentWindow });
     } else if (req.action === 'GET_PERSISTENT_STATE') {
       if (sendResponse) sendResponse({ success: true, persistent: !!config.persistentWindow });
+    } else if (req.action === 'SET_DEFAULT_MODE') {
+      const targetMode = req.mode || 'search';
+      config.defaultMode = targetMode;
+      if (isCardOpen && cardEl && cardEl.parentNode) {
+        if (targetMode !== 'machine_translation' && cardEl.classList.contains('simple-mt-card')) {
+          switchToFullFeatureMode(currentSelectionText, targetMode);
+        } else if (targetMode === 'machine_translation' && !cardEl.classList.contains('simple-mt-card')) {
+          switchToSimpleMtMode(currentSelectionText, lastSelectionRect);
+        }
+      }
+      if (sendResponse) sendResponse({ success: true });
     } else if (req.action === 'TOGGLE_CARD') {
       const sel = window.getSelection();
       const text = (sel ? sel.toString() : '').trim();
@@ -397,8 +438,20 @@
       if (key === 'persistentWindow') continue;
       config[key] = change.newValue;
     }
+    if (changes.defaultMode) {
+      const newDefault = changes.defaultMode.newValue;
+      config.defaultMode = newDefault;
+      if (isCardOpen && cardEl && cardEl.parentNode) {
+        if (newDefault && newDefault !== 'machine_translation' && cardEl.classList.contains('simple-mt-card')) {
+          switchToFullFeatureMode(currentSelectionText, newDefault);
+        } else if (newDefault === 'machine_translation' && !cardEl.classList.contains('simple-mt-card')) {
+          switchToSimpleMtMode(currentSelectionText, lastSelectionRect);
+        }
+      }
+    }
     if (changes.theme && cardEl) {
-      cardEl.className = `ai-dict-card theme-${config.theme}`;
+      const isMt = cardEl.classList.contains('simple-mt-card');
+      cardEl.className = isMt ? `ai-dict-card theme-${config.theme} simple-mt-card` : `ai-dict-card theme-${config.theme}`;
     }
     if (changes.isPaused && changes.isPaused.newValue === true) {
       removeTriggerBtn();
@@ -608,7 +661,15 @@
   function cleanSelectedText(raw) {
     if (!raw) return '';
     const trimmed = raw.trim();
-    const cleaned = trimmed.replace(/^[\s.,;:!?"'“”‘’()[\]{}«»‹›—–-]+|[\s.,;:!?"'“”‘’()[\]{}«»‹›—–-]+$/g, '');
+    // Preserve intentional ellipsis like '...' or '…'
+    const hasTrailingEllipsis = /\.{2,}$|…$/.test(trimmed);
+    let cleaned = trimmed;
+    if (hasTrailingEllipsis) {
+      cleaned = cleaned.replace(/^[\s,;:!?"'“”‘’()[\]{}«»‹›—–-]+/, '');
+      cleaned = cleaned.replace(/[\s,;:!?"'“”‘’()[\]{}«»‹›—–-]+$/, '');
+    } else {
+      cleaned = cleaned.replace(/^[\s.,;:!?"'“”‘’()[\]{}«»‹›—–-]+|[\s.,;:!?"'“”‘’()[\]{}«»‹›—–-]+$/g, '');
+    }
     return cleaned || trimmed;
   }
 
@@ -1024,6 +1085,8 @@
       cardSearchInput.placeholder = 'Type text to correct / translate...';
     } else if (mode === 'compare') {
       cardSearchInput.placeholder = 'Type words to compare (e.g. affect, effect)...';
+    } else if (mode === 'simple_llm') {
+      cardSearchInput.placeholder = 'Type word or text for Ling Flash (Not saved)...';
     } else {
       cardSearchInput.placeholder = 'Type word to define & save...';
     }
@@ -1062,18 +1125,28 @@
     { code: '🇮🇱 HE', name: 'Hebrew' }
   ];
 
-  // Default Languages list for language selection in Translation & Correction modes
+  // Default Languages list for language selection in LLM modes
   const DEFAULT_LANGS = ['🌐 Auto', '🇺🇸 EN', '🇩🇪 DE', '🇻🇳 VI', '🇫🇷 FR', '🇪🇸 ES', '🇯🇵 JA', '🇨🇳 ZH', '🇰🇷 KO'];
 
   function populateCardLangSelects(currentSrc, currentTgt) {
     if (!cardEl) return;
     const srcSelect = cardEl.querySelector('#ai-dict-card-src-lang');
     const tgtSelect = cardEl.querySelector('#ai-dict-card-tgt-lang');
+
+    let srcLangs = [...DEFAULT_LANGS];
+    if (currentSrc && !srcLangs.includes(currentSrc)) {
+      srcLangs.push(currentSrc);
+    }
+    let tgtLangs = DEFAULT_LANGS.filter(l => !l.includes('Auto'));
+    if (currentTgt && !tgtLangs.includes(currentTgt)) {
+      tgtLangs.push(currentTgt);
+    }
+
     if (srcSelect) {
-      srcSelect.innerHTML = DEFAULT_LANGS.map(l => `<option value="${l}" ${l === currentSrc ? 'selected' : ''}>${l}</option>`).join('');
+      srcSelect.innerHTML = srcLangs.map(l => `<option value="${l}" ${l === currentSrc ? 'selected' : ''}>${l}</option>`).join('');
     }
     if (tgtSelect) {
-      tgtSelect.innerHTML = DEFAULT_LANGS.filter(l => !l.includes('Auto')).map(l => `<option value="${l}" ${l === currentTgt ? 'selected' : ''}>${l}</option>`).join('');
+      tgtSelect.innerHTML = tgtLangs.map(l => `<option value="${l}" ${l === currentTgt ? 'selected' : ''}>${l}</option>`).join('');
     }
   }
 
@@ -1090,33 +1163,48 @@
     const appSettings = config.appSettings || {};
 
     if (currentMode === 'correction') {
-      langRow.style.display = 'flex';
+      langRow.style.setProperty('display', 'flex', 'important');
+      langRow.classList.remove('hidden');
       if (modetypeBtn) {
-        modetypeBtn.style.display = 'inline-flex';
+        modetypeBtn.style.setProperty('display', 'inline-flex', 'important');
         const modeType = appSettings[`correctionModeType_${pid}`] || 'both';
         const isBoth = modeType === 'both';
         if (modetypeLabel) {
           modetypeLabel.textContent = isBoth ? 'Correction + Translation' : 'Correction Only';
         }
         modetypeBtn.classList.toggle('correction-only', !isBoth);
-        if (tgtSelect) tgtSelect.style.display = isBoth ? 'inline-block' : 'none';
-        if (swapBtn) swapBtn.style.display = isBoth ? 'inline-block' : 'none';
+        if (tgtSelect) tgtSelect.style.setProperty('display', isBoth ? 'inline-block' : 'none', 'important');
+        if (swapBtn) swapBtn.style.setProperty('display', isBoth ? 'inline-block' : 'none', 'important');
       }
       populateCardLangSelects(
         appSettings[`correctionSourceLang_${pid}`] || '🌐 Auto',
         appSettings[`correctionTargetLang_${pid}`] || '🇺🇸 EN'
       );
-    } else if (currentMode === 'translation') {
-      langRow.style.display = 'flex';
-      if (modetypeBtn) modetypeBtn.style.display = 'none';
-      if (tgtSelect) tgtSelect.style.display = 'inline-block';
-      if (swapBtn) swapBtn.style.display = 'inline-block';
-      populateCardLangSelects(
-        appSettings[`translationSourceLang_${pid}`] || '🌐 Auto',
-        appSettings[`translationTargetLang_${pid}`] || '🇺🇸 EN'
-      );
+    } else if (['explain', 'translation', 'compare', 'search', 'simple_llm'].includes(currentMode)) {
+      langRow.style.setProperty('display', 'flex', 'important');
+      langRow.classList.remove('hidden');
+      if (modetypeBtn) modetypeBtn.style.setProperty('display', 'none', 'important');
+      if (tgtSelect) tgtSelect.style.setProperty('display', 'inline-block', 'important');
+      if (swapBtn) swapBtn.style.setProperty('display', 'inline-block', 'important');
+
+      const defaultTgt = appSettings[`searchTargetLang_${pid}`] || appSettings['SEARCH_TARGET_LANG'] || '🇺🇸 EN';
+      const defaultSrc = '🌐 Auto';
+
+      let srcVal = appSettings[`${currentMode}SourceLang_${pid}`];
+      let tgtVal = appSettings[`${currentMode}TargetLang_${pid}`];
+
+      if (currentMode === 'search') {
+        srcVal = srcVal || appSettings['SEARCH_SOURCE_LANG'] || defaultSrc;
+        tgtVal = tgtVal || appSettings['SEARCH_TARGET_LANG'] || defaultTgt;
+      } else {
+        srcVal = srcVal || defaultSrc;
+        tgtVal = tgtVal || defaultTgt;
+      }
+
+      populateCardLangSelects(srcVal, tgtVal);
     } else {
-      langRow.style.display = 'none';
+      langRow.style.setProperty('display', 'none', 'important');
+      langRow.classList.add('hidden');
     }
   }
 
@@ -1142,10 +1230,10 @@
     const mode = explicitMode || config.defaultMode || 'machine_translation';
     if (mode === 'machine_translation') {
       createCardElement('machine_translation');
-      const cardWidth = Math.min(540, Math.max(380, config.simpleMtWidth || 480));
-      const cardHeight = Math.min(460, Math.max(280, config.simpleMtHeight || 360));
       const vw = window.innerWidth;
       const vh = window.innerHeight;
+      const cardWidth = Math.min(Math.round(vw * 0.95), Math.max(360, config.simpleMtWidth || 480));
+      const cardHeight = Math.min(Math.round(vh * 0.9), Math.max(260, config.simpleMtHeight || 360));
       const x = Math.max(20, Math.round(vw - cardWidth - 36));
       const y = Math.max(24, Math.min(60, Math.round((vh - cardHeight) / 4)));
       cardEl.style.width = `${cardWidth}px`;
@@ -1256,12 +1344,17 @@
 
     // Determine mode
     let chosenMode = 'machine_translation';
+    const isLlmActive = (config.defaultMode && config.defaultMode !== 'machine_translation') || (isCardOpen && cardEl && !cardEl.classList.contains('simple-mt-card'));
+
     if (explicitMode) {
       chosenMode = explicitMode;
     } else if (/\b(vs\.?|versus)\b/i.test(cleanWord) || cleanWord.includes(';')) {
       chosenMode = 'compare';
     } else if (config.autoDetectSentence && (cleanWord.split(/\s+/).length > 3 || /[.!?]/.test(cleanWord))) {
-      chosenMode = 'machine_translation';
+      chosenMode = isLlmActive ? 'explain' : 'machine_translation';
+    } else if (isCardOpen && cardEl && !cardEl.classList.contains('simple-mt-card')) {
+      // If Full LLM card is currently open and no explicit mode passed, STAY in LLM mode!
+      chosenMode = (currentMode && currentMode !== 'machine_translation') ? currentMode : ((config.defaultMode && config.defaultMode !== 'machine_translation') ? config.defaultMode : 'search');
     } else {
       chosenMode = config.defaultMode || 'machine_translation';
     }
@@ -1269,19 +1362,9 @@
     // Simple Machine Translate Mode (Google Translate style, zero memory)
     if (chosenMode === 'machine_translation') {
       stopSpeech();
-      if (!isCardOpen || !cardEl || !cardEl.parentNode) {
-        createCardElement('machine_translation');
-        const cardWidth = Math.min(540, Math.max(380, config.simpleMtWidth || 480));
-        const cardHeight = Math.min(460, Math.max(280, config.simpleMtHeight || 360));
-        const pos = calculateSmartCardPosition(rect, cardWidth, cardHeight);
-        cardEl.style.width = `${pos.width}px`;
-        cardEl.style.height = `${pos.height}px`;
-        cardEl.style.left = `${pos.x}px`;
-        cardEl.style.top = `${pos.y}px`;
-        cardEl.dataset.placement = pos.placement;
-        isCardOpen = true;
-      } else if (!cardEl.classList.contains('simple-mt-card')) {
-        switchToSimpleMtMode(cleanWord);
+      activeLookupToken++; // Invalidate any in-flight LLM lookup callbacks
+      if (!isCardOpen || !cardEl || !cardEl.parentNode || !cardEl.classList.contains('simple-mt-card')) {
+        switchToSimpleMtMode(cleanWord, rect);
         return;
       }
       currentMode = 'machine_translation';
@@ -1291,6 +1374,14 @@
         srcInput.value = cleanWord;
       }
       updateSimpleMtCharCount(cleanWord);
+      if (!config.persistentWindow && rect) {
+        const cardWidth = cardEl.offsetWidth || Math.min(Math.round(window.innerWidth * 0.95), Math.max(360, config.simpleMtWidth || 480));
+        const cardHeight = cardEl.offsetHeight || Math.min(Math.round(window.innerHeight * 0.9), Math.max(260, config.simpleMtHeight || 360));
+        const pos = calculateSmartCardPosition(rect, cardWidth, cardHeight);
+        cardEl.style.left = `${pos.x}px`;
+        cardEl.style.top = `${pos.y}px`;
+        cardEl.dataset.placement = pos.placement;
+      }
       performSimpleMtLookup(cleanWord);
       return;
     }
@@ -1528,7 +1619,7 @@
             </svg>
           </div>
 
-          <div class="simple-mt-lang-group">
+          <div class="simple-mt-lang-capsule">
             <select class="simple-mt-lang-select" id="simple-mt-src-lang" title="Source Language">
               ${srcOptions}
             </select>
@@ -1537,16 +1628,16 @@
               ${tgtOptions}
             </select>
           </div>
-
-          <span class="simple-mt-badge" title="Offline Meta NLLB-200 (600M) Model">
-            <span>⚡ Offline MT</span>
-          </span>
         </div>
 
-        <div class="header-actions">
-          <button type="button" class="simple-mt-switch-full-btn" id="simple-mt-header-full-btn" title="Switch to Full Feature AI Dict (Definitions, Profiles, Chat)">
+        <div class="header-actions simple-mt-header-actions">
+          <button type="button" class="simple-mt-switch-quick-btn" id="simple-mt-header-quick-btn" title="Quick LLM: Run fast ephemeral Ling Flash lookup (No save)">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            <span>⚡ Quick</span>
+          </button>
+          <button type="button" class="simple-mt-switch-full-btn" id="simple-mt-header-full-btn" title="Full LLM: Full Feature AI Dict (Definitions, Profiles, Chat)">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
-            <span>✨ Full AI Dict</span>
+            <span>✨ Full</span>
           </button>
 
           <button type="button" class="icon-btn ${config.persistentWindow ? 'active-pin' : ''}" id="ai-dict-pin-btn" title="${config.persistentWindow ? 'Persistent Window: ON (Click to unpin)' : 'Persistent Window: OFF (Click to pin & keep open)'}">
@@ -1587,7 +1678,10 @@
             <textarea class="simple-mt-textarea simple-mt-target-textarea" id="simple-mt-target-input" placeholder="Translation will appear here (editable)..." rows="2" spellcheck="false"></textarea>
           </div>
           <div class="simple-mt-box-footer">
-            <span class="simple-mt-model-tag" id="simple-mt-detected-tag">Standard 600M (Offline)</span>
+            <span class="simple-mt-model-tag" id="simple-mt-detected-tag">
+              <span class="mt-badge-dot"></span>
+              <span>Standard 600M (Offline)</span>
+            </span>
             <div class="simple-mt-box-actions">
               <button type="button" class="simple-mt-icon-btn" id="simple-mt-regenerate-btn" title="Regenerate translation from source text">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -1605,9 +1699,13 @@
       </div>
 
       <div class="simple-mt-footer" id="simple-mt-footer">
-        <button type="button" class="simple-mt-return-llm-btn" id="simple-mt-return-llm-btn" title="Switch to Full Feature AI Dict (Definitions, Grammar, Synonyms, Profiles & AI Chat)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
-          <span>✨ Switch to Full Feature Mode (LLM)</span>
+        <button type="button" class="simple-mt-quick-llm-btn" id="simple-mt-quick-llm-btn" title="Quick LLM: Run fast, ephemeral Ling Flash lookup (No automatic save)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          <span>⚡ Quick LLM (${escapeHtml(config.simpleLlmModel || 'Ling Flash')})</span>
+        </button>
+        <button type="button" class="simple-mt-return-llm-btn" id="simple-mt-return-llm-btn" title="Full LLM: Switch to Full Feature Mode (Definitions, Grammar, Synonyms, Profiles & AI Chat)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+          <span>✨ Full LLM</span>
         </button>
       </div>
 
@@ -1658,14 +1756,34 @@
       });
     }
 
-    // Switch to Full Feature mode buttons (header & footer)
+    // Switch to Full Feature / Quick LLM mode buttons (header & footer)
+    const switchQuickHeaderBtn = cardEl.querySelector('#simple-mt-header-quick-btn');
+    if (switchQuickHeaderBtn) {
+      switchQuickHeaderBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const srcInput = cardEl.querySelector('#simple-mt-source-input');
+        const text = (srcInput ? srcInput.value.trim() : '') || currentSelectionText;
+        switchToFullFeatureMode(text, 'simple_llm');
+      });
+    }
+
     const switchFullHeaderBtn = cardEl.querySelector('#simple-mt-header-full-btn');
     if (switchFullHeaderBtn) {
       switchFullHeaderBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const srcInput = cardEl.querySelector('#simple-mt-source-input');
         const text = (srcInput ? srcInput.value.trim() : '') || currentSelectionText;
-        switchToFullFeatureMode(text);
+        switchToFullFeatureMode(text, 'search');
+      });
+    }
+
+    const quickLlmFooterBtn = cardEl.querySelector('#simple-mt-quick-llm-btn');
+    if (quickLlmFooterBtn) {
+      quickLlmFooterBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const srcInput = cardEl.querySelector('#simple-mt-source-input');
+        const text = (srcInput ? srcInput.value.trim() : '') || currentSelectionText;
+        switchToFullFeatureMode(text, 'simple_llm');
       });
     }
 
@@ -1675,7 +1793,7 @@
         e.stopPropagation();
         const srcInput = cardEl.querySelector('#simple-mt-source-input');
         const text = (srcInput ? srcInput.value.trim() : '') || currentSelectionText;
-        switchToFullFeatureMode(text);
+        switchToFullFeatureMode(text, 'search');
       });
     }
 
@@ -1901,7 +2019,7 @@
         save_history: false // ZERO MEMORY: Never save default MT lookups to SQLite
       });
 
-      if (thisToken !== activeMtLookupToken || !isCardOpen || !cardEl || currentMode !== 'machine_translation') {
+      if (thisToken !== activeMtLookupToken || !isCardOpen || !cardEl || currentMode !== 'machine_translation' || !cardEl.classList.contains('simple-mt-card')) {
         return;
       }
 
@@ -1915,10 +2033,10 @@
       }
       if (modelTag) {
         const detected = res.detected_source ? `Detected: ${res.detected_source} • ` : '';
-        modelTag.textContent = `${detected}Standard 600M (Offline)`;
+        modelTag.innerHTML = `<span class="mt-badge-dot"></span><span>${escapeHtml(detected)}Standard 600M (Offline)</span>`;
       }
     } catch (err) {
-      if (thisToken !== activeMtLookupToken || !isCardOpen || !cardEl || currentMode !== 'machine_translation') {
+      if (thisToken !== activeMtLookupToken || !isCardOpen || !cardEl || currentMode !== 'machine_translation' || !cardEl.classList.contains('simple-mt-card')) {
         return;
       }
       if (targetContent) {
@@ -1939,36 +2057,49 @@
   function switchToFullFeatureMode(term, mode = 'search') {
     const textToLookUp = term || currentSelectionText;
     currentMode = mode;
-    if (!cardEl) return;
+    activeMtLookupToken++; // Invalidate any in-flight MT lookup!
+    config.defaultMode = mode;
+    safeStorageSet({ defaultMode: mode });
 
-    cardEl.classList.remove('simple-mt-card');
+    createCardElement(mode);
+
     const cardWidth = Math.max(360, config.cardWidth || 560);
     const cardHeight = Math.max(280, config.cardHeight || 640);
     cardEl.style.width = `${cardWidth}px`;
     cardEl.style.height = `${cardHeight}px`;
 
-    renderCardSkeleton();
+    isCardOpen = true;
     updatePinButtonUI();
     updateNewTabButtonUI();
 
     if (textToLookUp) {
       openCardAtRect(lastSelectionRect, textToLookUp, mode);
+    } else {
+      openPersistentEmptyCard(mode);
     }
   }
 
-  function switchToSimpleMtMode(term) {
+  function switchToSimpleMtMode(term, rect = null) {
     const textToTranslate = term || currentSelectionText;
     currentMode = 'machine_translation';
-    if (!cardEl) return;
+    activeLookupToken++; // Invalidate any in-flight LLM lookup!
+    config.defaultMode = 'machine_translation';
+    safeStorageSet({ defaultMode: 'machine_translation' });
 
-    cardEl.classList.add('simple-mt-card');
-    const cardWidth = Math.min(540, Math.max(380, config.simpleMtWidth || 480));
-    const cardHeight = Math.min(460, Math.max(280, config.simpleMtHeight || 360));
-    cardEl.style.width = `${cardWidth}px`;
-    cardEl.style.height = `${cardHeight}px`;
+    createCardElement('machine_translation');
 
-    renderSimpleMtSkeleton();
-    setupSimpleMtEventListeners();
+    const cardWidth = Math.min(Math.round(window.innerWidth * 0.95), Math.max(360, config.simpleMtWidth || 480));
+    const cardHeight = Math.min(Math.round(window.innerHeight * 0.9), Math.max(260, config.simpleMtHeight || 360));
+    const effectiveRect = rect || lastSelectionRect;
+    const pos = calculateSmartCardPosition(effectiveRect, cardWidth, cardHeight);
+
+    cardEl.style.width = `${pos.width}px`;
+    cardEl.style.height = `${pos.height}px`;
+    cardEl.style.left = `${pos.x}px`;
+    cardEl.style.top = `${pos.y}px`;
+    cardEl.dataset.placement = pos.placement;
+
+    isCardOpen = true;
     updatePinButtonUI();
 
     if (textToTranslate) {
@@ -1982,9 +2113,13 @@
   function createCardElement(mode = currentMode) {
     syncHostContainerParent();
     if (!shadowRoot) return;
-    if (cardEl && cardEl.parentNode) {
-      cardEl.parentNode.removeChild(cardEl);
-    }
+
+    // Purge ALL existing cards from shadowRoot to ensure strict mutual exclusivity
+    const existingCards = shadowRoot.querySelectorAll('.ai-dict-card, .simple-mt-card, .ai-dict-secondary-card');
+    existingCards.forEach(c => c.remove());
+    cardEl = null;
+    secondaryCardEl = null;
+    isSecondaryCardOpen = false;
 
     cardEl = document.createElement('div');
     if (mode === 'machine_translation') {
@@ -2007,6 +2142,7 @@
     closeSecondaryCard();
     stopSpeech();
     activeLookupToken++; // Invalidate any in-flight lookup callbacks so they never render into subsequent cards
+    activeMtLookupToken++; // Invalidate any in-flight MT lookups
     cardTabs = [];
     activeCardTabId = null;
     const iframe = cardEl?.querySelector('#ai-dict-external-frame');
@@ -2014,10 +2150,11 @@
       iframe.src = 'about:blank';
       iframe.parentNode.removeChild(iframe);
     }
-    if (cardEl && cardEl.parentNode) {
-      cardEl.parentNode.removeChild(cardEl);
-      cardEl = null;
+    if (shadowRoot) {
+      const cards = shadowRoot.querySelectorAll('.ai-dict-card, .simple-mt-card, .ai-dict-secondary-card');
+      cards.forEach(c => c.remove());
     }
+    cardEl = null;
     isCardOpen = false;
     isHistoryOpen = false;
     currentWordData = null;
@@ -2056,6 +2193,7 @@
 
           <div class="mode-pills">
             <button type="button" class="mode-pill ${currentMode === 'machine_translation' ? 'active' : ''}" data-mode="machine_translation" title="Switch to Simple MT (Google Translate style, no memory)">⚡ Simple MT</button>
+            <button type="button" class="mode-pill ${currentMode === 'simple_llm' ? 'active' : ''}" data-mode="simple_llm" title="⚡ Simple LLM (Ling Flash • Lightweight, save on click)">⚡ Ling Flash</button>
             <button type="button" class="mode-pill ${currentMode === 'search' ? 'active' : ''}" data-mode="search">Word</button>
             <button type="button" class="mode-pill ${currentMode === 'explain' ? 'active' : ''}" data-mode="explain">Explain</button>
             <button type="button" class="mode-pill ${currentMode === 'translation' ? 'active' : ''}" data-mode="translation">Translate</button>
@@ -2147,6 +2285,7 @@
         <form class="card-search-form" id="ai-dict-card-search-form">
           <div class="card-search-group">
             <select class="card-search-mode-select" id="ai-dict-card-search-mode-select" title="Choose lookup mode">
+              <option value="simple_llm" ${currentMode === 'simple_llm' ? 'selected' : ''}>⚡ Ling Flash</option>
               <option value="search" ${currentMode === 'search' ? 'selected' : ''}>🔍 Word</option>
               <option value="explain" ${currentMode === 'explain' ? 'selected' : ''}>📖 Explain</option>
               <option value="translation" ${currentMode === 'translation' ? 'selected' : ''}>🌐 Translate</option>
@@ -2158,7 +2297,7 @@
               class="card-search-input"
               id="ai-dict-card-search-input"
               value="${escapeHtml(currentSelectionText || '')}"
-              placeholder="${currentMode === 'explain' ? 'Type phrase or sentence to explain...' : currentMode === 'translation' ? 'Type text to translate...' : currentMode === 'correction' ? 'Type text to correct / translate...' : currentMode === 'compare' ? 'Type words to compare (e.g. affect, effect)...' : 'Type word to define & save...'}"
+              placeholder="${currentMode === 'explain' ? 'Type phrase or sentence to explain...' : currentMode === 'translation' ? 'Type text to translate...' : currentMode === 'correction' ? 'Type text to correct / translate...' : currentMode === 'compare' ? 'Type words to compare (e.g. affect, effect)...' : currentMode === 'simple_llm' ? 'Type word or text for Ling Flash (Not saved)...' : 'Type word to define & save...'}"
               autocomplete="off"
               spellcheck="false"
             />
@@ -2181,8 +2320,8 @@
               </svg>
             </button>
           </div>
-          <!-- Language Capsule row for Translation & Correction modes -->
-          <div class="card-lang-row" id="ai-dict-card-lang-row" style="${currentMode === 'translation' || currentMode === 'correction' ? 'display:flex;' : 'display:none;'}">
+          <!-- Language Capsule row for LLM modes -->
+          <div class="card-lang-row ${!['search', 'explain', 'translation', 'compare', 'correction', 'simple_llm'].includes(currentMode) ? 'hidden' : ''}" id="ai-dict-card-lang-row" style="${['search', 'explain', 'translation', 'compare', 'correction', 'simple_llm'].includes(currentMode) ? 'display:flex !important;' : 'display:none !important;'}">
             <button type="button" class="lang-modetype-btn" id="ai-dict-card-modetype-btn" style="${currentMode === 'correction' ? 'display:inline-flex;' : 'display:none;'}" title="Toggle between Correction Only and Correction + Translation">
               <span id="ai-dict-card-modetype-label">Correction + Translation</span>
             </button>
@@ -2376,6 +2515,22 @@
       safeSendMessage({ action: 'OPEN_APP' });
     });
 
+    // Mermaid code block copy handler
+    cardEl.addEventListener('click', (e) => {
+      const copyMermaidBtn = e.target.closest('.ai-dict-mermaid-copy-btn');
+      if (copyMermaidBtn) {
+        e.stopPropagation();
+        const code = copyMermaidBtn.dataset.code || '';
+        navigator.clipboard.writeText(code).then(() => {
+          const span = copyMermaidBtn.querySelector('span');
+          if (span) span.textContent = 'Copied!';
+          setTimeout(() => {
+            if (span) span.textContent = 'Copy Code';
+          }, 2000);
+        }).catch(() => {});
+      }
+    });
+
     // Tab buttons
     const tabAiBtn = cardEl.querySelector('#ai-dict-tab-ai');
     if (tabAiBtn) {
@@ -2430,10 +2585,12 @@
       pill.addEventListener('click', () => {
         const targetMode = pill.dataset.mode;
         if (targetMode === 'machine_translation') {
-          switchToSimpleMtMode(currentSelectionText || (cardSearchInput ? cardSearchInput.value.trim() : ''));
+          switchToSimpleMtMode(currentSelectionText || (cardSearchInput ? cardSearchInput.value.trim() : ''), lastSelectionRect);
           return;
         }
         currentMode = targetMode;
+        config.defaultMode = targetMode;
+        safeStorageSet({ defaultMode: targetMode });
         pills.forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         if (cardModeSelect) cardModeSelect.value = currentMode;
@@ -2448,10 +2605,12 @@
       cardModeSelect.addEventListener('change', () => {
         const targetMode = cardModeSelect.value;
         if (targetMode === 'machine_translation') {
-          switchToSimpleMtMode(currentSelectionText || (cardSearchInput ? cardSearchInput.value.trim() : ''));
+          switchToSimpleMtMode(currentSelectionText || (cardSearchInput ? cardSearchInput.value.trim() : ''), lastSelectionRect);
           return;
         }
         currentMode = targetMode;
+        config.defaultMode = targetMode;
+        safeStorageSet({ defaultMode: targetMode });
         pills.forEach(p => p.classList.toggle('active', p.dataset.mode === currentMode));
         syncSearchPlaceholder(currentMode);
         syncCardLanguageRow();
@@ -2507,11 +2666,17 @@
         e.stopPropagation();
         const pid = config.activeProfileId || 1;
         const appSettings = config.appSettings || {};
-        const key = currentMode === 'correction' ? `correctionSourceLang_${pid}` : `translationSourceLang_${pid}`;
+        const key = `${currentMode}SourceLang_${pid}`;
         appSettings[key] = e.target.value;
+        if (currentMode === 'search') {
+          appSettings['SEARCH_SOURCE_LANG'] = e.target.value;
+        }
         config.appSettings = appSettings;
         await safeStorageSet({ appSettings });
         callBackend('/api/settings', 'POST', { key, value: e.target.value }).catch(() => {});
+        if (currentMode === 'search') {
+          callBackend('/api/settings', 'POST', { key: 'SEARCH_SOURCE_LANG', value: e.target.value }).catch(() => {});
+        }
         syncCardLanguageRow();
       });
     }
@@ -2522,11 +2687,17 @@
         e.stopPropagation();
         const pid = config.activeProfileId || 1;
         const appSettings = config.appSettings || {};
-        const key = currentMode === 'correction' ? `correctionTargetLang_${pid}` : `translationTargetLang_${pid}`;
+        const key = `${currentMode}TargetLang_${pid}`;
         appSettings[key] = e.target.value;
+        if (currentMode === 'search') {
+          appSettings['SEARCH_TARGET_LANG'] = e.target.value;
+        }
         config.appSettings = appSettings;
         await safeStorageSet({ appSettings });
         callBackend('/api/settings', 'POST', { key, value: e.target.value }).catch(() => {});
+        if (currentMode === 'search') {
+          callBackend('/api/settings', 'POST', { key: 'SEARCH_TARGET_LANG', value: e.target.value }).catch(() => {});
+        }
         syncCardLanguageRow();
       });
     }
@@ -2538,17 +2709,26 @@
         e.stopPropagation();
         const pid = config.activeProfileId || 1;
         const appSettings = config.appSettings || {};
-        const srcKey = currentMode === 'correction' ? `correctionSourceLang_${pid}` : `translationSourceLang_${pid}`;
-        const tgtKey = currentMode === 'correction' ? `correctionTargetLang_${pid}` : `translationTargetLang_${pid}`;
-        const oldSrc = appSettings[srcKey] || '🌐 Auto';
-        const oldTgt = appSettings[tgtKey] || '🇺🇸 EN';
+        const srcKey = `${currentMode}SourceLang_${pid}`;
+        const tgtKey = `${currentMode}TargetLang_${pid}`;
+        const defaultTgt = appSettings[`searchTargetLang_${pid}`] || appSettings['SEARCH_TARGET_LANG'] || '🇺🇸 EN';
+        const oldSrc = appSettings[srcKey] || (currentMode === 'search' ? (appSettings['SEARCH_SOURCE_LANG'] || '🌐 Auto') : '🌐 Auto');
+        const oldTgt = appSettings[tgtKey] || (currentMode === 'search' ? defaultTgt : defaultTgt);
         if (oldSrc.includes('Auto')) return;
         appSettings[srcKey] = oldTgt;
         appSettings[tgtKey] = oldSrc;
+        if (currentMode === 'search') {
+          appSettings['SEARCH_SOURCE_LANG'] = oldTgt;
+          appSettings['SEARCH_TARGET_LANG'] = oldSrc;
+        }
         config.appSettings = appSettings;
         await safeStorageSet({ appSettings });
         callBackend('/api/settings', 'POST', { key: srcKey, value: oldTgt }).catch(() => {});
         callBackend('/api/settings', 'POST', { key: tgtKey, value: oldSrc }).catch(() => {});
+        if (currentMode === 'search') {
+          callBackend('/api/settings', 'POST', { key: 'SEARCH_SOURCE_LANG', value: oldTgt }).catch(() => {});
+          callBackend('/api/settings', 'POST', { key: 'SEARCH_TARGET_LANG', value: oldSrc }).catch(() => {});
+        }
         syncCardLanguageRow();
       });
     }
@@ -2900,10 +3080,13 @@
 
   function createEmptyWordTab() {
     const newTabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const initialMode = (config.defaultMode && config.defaultMode !== 'machine_translation')
+      ? config.defaultMode
+      : (currentMode && currentMode !== 'machine_translation' ? currentMode : 'search');
     const newTab = {
       id: newTabId,
       word: '',
-      mode: config.defaultMode || 'machine_translation',
+      mode: initialMode,
       token: ++activeLookupToken,
       isLoading: false,
       data: null,
@@ -3338,15 +3521,27 @@
           profile_id: pid,
           session_id: config.activeSessionId || undefined
         };
-      } else if (tab.mode === 'machine_translation') {
-        endpoint = '/api/mt/translate';
+      } else if (tab.mode === 'simple_llm') {
+        endpoint = '/api/simple-llm/lookup';
         requestBody = {
           text: lookupWord,
-          source_lang: getLang('correction', 'SourceLang') || getLang('translation', 'SourceLang') || '🌐 Auto',
-          target_lang: getLang('correction', 'TargetLang') || getLang('translation', 'TargetLang') || '🇺🇸 EN',
-          level: 'standard',
+          source_lang: getLang('simple_llm', 'SourceLang') || getLang('search', 'SourceLang') || undefined,
+          target_lang: getLang('simple_llm', 'TargetLang') || getLang('search', 'TargetLang') || undefined,
+          model: config.simpleLlmModel || 'inclusionai/ling-3.0-flash',
           profile_id: pid,
-          save_history: false
+          prompt_key: tab.promptKey || config.simpleLlmDefaultPrompt || 'quick_glance'
+        };
+      } else if (tab.mode === 'machine_translation') {
+        // Inside Full LLM card, redirect machine_translation tabs to LLM translation mode
+        tab.mode = 'translation';
+        currentMode = 'translation';
+        endpoint = '/api/translations/search';
+        requestBody = {
+          text: lookupWord,
+          source_lang: getLang('translation', 'SourceLang') || '🌐 Auto',
+          target_lang: getLang('translation', 'TargetLang') || '🇺🇸 EN',
+          profile_id: pid,
+          session_id: config.activeSessionId || undefined
         };
       }
 
@@ -3367,7 +3562,9 @@
         targetTab.currentDetectedLanguage = item.language || item.source_lang;
       }
 
-      cachedHistoryData[targetTab.mode] = null;
+      if (targetTab.mode !== 'simple_llm') {
+        cachedHistoryData[targetTab.mode] = null;
+      }
       renderWordTabsBar();
 
       // If active tab is this tab, display result immediately
@@ -3433,14 +3630,20 @@
 
     const targetMode = explicitMode || currentMode;
     if (targetMode === 'machine_translation') {
-      switchToSimpleMtMode(cleanWord);
+      switchToSimpleMtMode(cleanWord, lastSelectionRect);
       return;
     }
 
     if (explicitMode) {
       currentMode = explicitMode;
+      config.defaultMode = explicitMode;
+      safeStorageSet({ defaultMode: explicitMode });
       const pills = cardEl?.querySelectorAll('.mode-pill');
       pills?.forEach(p => p.classList.toggle('active', p.dataset.mode === currentMode));
+      const cardModeSelect = cardEl?.querySelector('#ai-dict-card-search-mode-select');
+      if (cardModeSelect) cardModeSelect.value = currentMode;
+      syncSearchPlaceholder(currentMode);
+      syncCardLanguageRow();
     }
 
     let targetTab = cardTabs.find(t => t.id === activeCardTabId);
@@ -3457,13 +3660,17 @@
         activeView: 'ai',
         externalUrl: '',
         externalName: '',
-        chatMessages: []
+        chatMessages: [],
+        promptKey: config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance'
       };
       cardTabs = [targetTab];
       activeCardTabId = targetTab.id;
     } else {
       targetTab.word = cleanWord;
       targetTab.mode = currentMode;
+      if (currentMode === 'simple_llm' && !targetTab.promptKey) {
+        targetTab.promptKey = config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance';
+      }
       targetTab.token = ++activeLookupToken;
       targetTab.isLoading = true;
       targetTab.data = null;
@@ -3491,9 +3698,12 @@
   async function moveWordMode(targetMode, term, itemId) {
     if (!cardEl) return;
     if (targetMode === 'machine_translation') {
-      switchToSimpleMtMode(term || currentSelectionText);
+      switchToSimpleMtMode(term || currentSelectionText, lastSelectionRect);
       return;
     }
+    currentMode = targetMode;
+    config.defaultMode = targetMode;
+    safeStorageSet({ defaultMode: targetMode });
     switchToAiTab();
     const thisToken = ++activeLookupToken;
     const bodyEl = cardEl.querySelector('#ai-dict-card-body');
@@ -3536,6 +3746,10 @@
       currentMode = targetMode;
       const pills = cardEl.querySelectorAll('.mode-pill');
       pills.forEach(p => p.classList.toggle('active', p.dataset.mode === currentMode));
+      const cardModeSelect = cardEl.querySelector('#ai-dict-card-search-mode-select');
+      if (cardModeSelect) cardModeSelect.value = currentMode;
+      syncSearchPlaceholder(currentMode);
+      syncCardLanguageRow();
 
       renderLookupResult(res, term || currentSelectionText);
     } catch (err) {
@@ -3615,6 +3829,16 @@
       explanationText = assistantChat ? assistantChat.content : (item.explanation || '');
       colorTag = item.color || null;
       if (chatDrawer) chatDrawer.style.display = 'block';
+    } else if (currentMode === 'simple_llm') {
+      item = data.word || data;
+      currentWordData = item;
+      itemId = item.id || null;
+      termTitle = item.term || data.term || termOverride || currentSelectionText;
+      language = item.language || data.language || '';
+      lemma = item.lemma || data.lemma || '';
+      explanationText = assistantChat ? assistantChat.content : (data.content || item.explanation || '');
+      colorTag = item.color || null;
+      if (chatDrawer) chatDrawer.style.display = itemId ? 'block' : 'none';
     } else if (currentMode === 'machine_translation') {
       item = data.mt || data;
       currentWordData = item;
@@ -3645,15 +3869,51 @@
     const profileLangSetting = config.appSettings?.[`searchSourceLang_${config.activeProfileId}`] || config.appSettings?.['SEARCH_SOURCE_LANG'];
     const resolvedSpeechLang = resolveSpeechLanguage(language, profileLangSetting, config.activeProfileName);
 
+    const isUnsavedSimpleLlm = (currentMode === 'simple_llm' && !itemId && !data.saved);
+
     bodyEl.innerHTML = `
-      <div class="status-banner">
-        <span>✓ Saved to <strong>${escapeHtml(config.activeProfileName || 'Profile')}</strong></span>
-        <span style="opacity:0.85;">Viewed ${item?.view_count || 1}x • Searched ${item?.search_count || 1}x</span>
-      </div>
+      ${isUnsavedSimpleLlm ? `
+        <div class="status-banner simple-llm-banner" id="ai-dict-simple-llm-banner">
+          <div class="simple-llm-banner-info">
+            <span class="simple-llm-tag">⚡ Quick LLM</span>
+            <span class="simple-llm-model-name">${escapeHtml(config.simpleLlmModel || 'inclusionai/ling-3.0-flash')}</span>
+            <span class="simple-llm-unsaved-badge">• Not saved</span>
+          </div>
+          <button type="button" class="simple-llm-save-btn" id="ai-dict-simple-llm-save-btn" title="Save this lookup to ${escapeHtml(config.activeProfileName || 'Profile')}">
+            💾 Save to Profile
+          </button>
+        </div>
+      ` : `
+        <div class="status-banner">
+          <span>✓ Saved to <strong>${escapeHtml(config.activeProfileName || 'Profile')}</strong></span>
+          <span style="opacity:0.85;">Viewed ${item?.view_count || 1}x • Searched ${item?.search_count || 1}x</span>
+        </div>
+      `}
+
+      ${currentMode === 'simple_llm' ? `
+        <div class="simple-llm-prompt-bar">
+          <span class="simple-llm-prompt-label">Lens:</span>
+          <select class="simple-llm-prompt-select" id="ai-dict-simple-llm-prompt-select" title="Switch prompt preset to re-analyze with different prompt">
+            ${getActiveSimpleLlmPrompts().map(p => {
+              const icon = p.icon || '⚡';
+              const name = p.name ? (p.name.includes(icon) ? p.name : `${icon} ${p.name}`) : p.id;
+              return `<option value="${escapeHtml(p.id)}" ${(cardTabs.find(t => t.id === activeCardTabId)?.promptKey || config.simpleLlmDefaultPrompt || 'quick_glance') === p.id ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+            }).join('')}
+          </select>
+          <button type="button" class="simple-llm-set-default-btn" id="ai-dict-simple-llm-set-default-btn" title="Set this prompt preset as your default for Quick LLM">
+            ★ Set Default
+          </button>
+        </div>
+      ` : ''}
 
       <div class="word-title-row">
-        <div class="word-term">
-          <span>${escapeHtml(termTitle)}</span>
+        <div class="word-term" style="${termTitle.length > 50 ? 'font-size:16px !important;' : termTitle.length > 25 ? 'font-size:18px !important;' : ''}">
+          <span id="ai-dict-term-title-text" title="${escapeHtml(termTitle)}">${escapeHtml(termTitle)}</span>
+          ${currentMode === 'explain' && itemId ? `
+            <button type="button" class="icon-btn" id="ai-dict-rename-explain-btn" title="Rename or shorten title (e.g. ABC do ...)" style="padding:2px 5px; opacity:0.6; font-size:11px; margin-left:2px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </button>
+          ` : ''}
           <div class="speech-controls-group" id="ai-dict-speech-group">
             <button type="button" class="speech-btn" id="ai-dict-speak-btn" title="Listen pronunciation (${escapeHtml(resolvedSpeechLang.label)})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
@@ -3749,10 +4009,16 @@
             <span style="font-size:11.5px; opacity:0.75; color:inherit;">
               Want full dictionary definition & grammar breakdown?
             </span>
-            <button type="button" id="ai-dict-return-to-llm-btn" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; background:linear-gradient(135deg, rgba(59,130,246,0.16), rgba(147,51,234,0.2)); border:1px solid rgba(147,51,234,0.4); border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:#7c3aed; transition:all 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.05);" title="Switch to AI Dictionary (LLM) for detailed word definitions, examples, and etymology">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
-              <span>✨ Return to LLM Mode</span>
-            </button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button type="button" id="ai-dict-quick-llm-btn" style="display:inline-flex; align-items:center; gap:5px; padding:6px 12px; background:linear-gradient(135deg, rgba(245,158,11,0.14), rgba(217,119,6,0.18)); border:1px solid rgba(245,158,11,0.38); border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:#f59e0b; transition:all 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.05);" title="Quick LLM: Run fast ephemeral Ling Flash lookup (No automatic save)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                <span>⚡ Quick LLM</span>
+              </button>
+              <button type="button" id="ai-dict-return-to-llm-btn" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; background:linear-gradient(135deg, rgba(59,130,246,0.16), rgba(147,51,234,0.2)); border:1px solid rgba(147,51,234,0.4); border-radius:10px; font-size:12px; font-weight:700; cursor:pointer; color:#7c3aed; transition:all 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.05);" title="Switch to AI Dictionary (LLM) for detailed word definitions, examples, and etymology">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+                <span>✨ Full LLM</span>
+              </button>
+            </div>
           </div>
         </div>
       ` : `
@@ -3764,11 +4030,99 @@
       `}
     `;
 
+    const quickLlmBtn = bodyEl.querySelector('#ai-dict-quick-llm-btn');
+    if (quickLlmBtn) {
+      quickLlmBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        performLookup(termTitle, 'simple_llm');
+      });
+    }
+
     const returnToLlmBtn = bodyEl.querySelector('#ai-dict-return-to-llm-btn');
     if (returnToLlmBtn) {
       returnToLlmBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         performLookup(termTitle, 'search');
+      });
+    }
+
+    const simpleLlmSaveBtn = bodyEl.querySelector('#ai-dict-simple-llm-save-btn');
+    if (simpleLlmSaveBtn) {
+      simpleLlmSaveBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        simpleLlmSaveBtn.disabled = true;
+        simpleLlmSaveBtn.innerHTML = `<span>Saving...</span>`;
+        try {
+          const pid = config.activeProfileId || 1;
+          const saveRes = await callBackend('/api/simple-llm/save', 'POST', {
+            text: termTitle,
+            content: explanationText,
+            source_lang: language || undefined,
+            target_lang: undefined,
+            profile_id: pid,
+            session_id: config.activeSessionId || undefined
+          });
+          simpleLlmSaveBtn.classList.add('saved');
+          simpleLlmSaveBtn.innerHTML = `<span>✓ Saved</span>`;
+          const bannerEl = bodyEl.querySelector('#ai-dict-simple-llm-banner');
+          if (bannerEl) {
+            bannerEl.className = 'status-banner';
+            bannerEl.innerHTML = `
+              <span>✓ Saved to <strong>${escapeHtml(config.activeProfileName || 'Profile')}</strong></span>
+              <span style="opacity:0.85;">${saveRes.mode === 'search' ? 'Word' : 'Explain'} entry created</span>
+            `;
+          }
+          if (saveRes.id) {
+            itemId = saveRes.id;
+            if (currentWordData) currentWordData.id = saveRes.id;
+            if (chatDrawer) chatDrawer.style.display = 'block';
+          }
+          cachedHistoryData.search = null;
+          cachedHistoryData.explain = null;
+          showToast(`Saved to ${config.activeProfileName || 'Profile'}!`);
+        } catch (err) {
+          simpleLlmSaveBtn.disabled = false;
+          simpleLlmSaveBtn.innerHTML = `<span>Retry Save</span>`;
+          alert(`Failed to save: ${err.message}`);
+        }
+      });
+    }
+
+    const simpleLlmPromptSelect = bodyEl.querySelector('#ai-dict-simple-llm-prompt-select');
+    if (simpleLlmPromptSelect) {
+      simpleLlmPromptSelect.addEventListener('change', async (e) => {
+        const newPromptKey = e.target.value;
+        const currentActiveTab = cardTabs.find(t => t.id === activeCardTabId);
+        if (currentActiveTab) {
+          currentActiveTab.promptKey = newPromptKey;
+          config.simpleLlmActivePrompt = newPromptKey;
+          safeStorageSet({ simpleLlmActivePrompt: newPromptKey });
+          currentActiveTab.isLoading = true;
+          currentActiveTab.token = ++activeLookupToken;
+          bodyEl.innerHTML = `
+            <div class="loading-box">
+              <div class="spinner"></div>
+              <div style="font-size:12px; font-weight:600;">Re-analyzing with ${escapeHtml(getActiveSimpleLlmPrompts().find(p => p.id === newPromptKey)?.name || newPromptKey)}...</div>
+              <div style="font-size:11px; opacity:0.6; margin-top:4px;">"${escapeHtml(termTitle)}"</div>
+            </div>
+          `;
+          performTabLookup(currentActiveTab);
+        }
+      });
+    }
+
+    const simpleLlmSetDefaultBtn = bodyEl.querySelector('#ai-dict-simple-llm-set-default-btn');
+    if (simpleLlmSetDefaultBtn && simpleLlmPromptSelect) {
+      simpleLlmSetDefaultBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const curVal = simpleLlmPromptSelect.value || 'quick_glance';
+        config.simpleLlmDefaultPrompt = curVal;
+        config.simpleLlmActivePrompt = curVal;
+        await safeStorageSet({ simpleLlmDefaultPrompt: curVal, simpleLlmActivePrompt: curVal });
+        simpleLlmSetDefaultBtn.textContent = '✓ Default Saved';
+        setTimeout(() => {
+          if (simpleLlmSetDefaultBtn) simpleLlmSetDefaultBtn.textContent = '★ Set Default';
+        }, 1500);
       });
     }
 
@@ -3870,6 +4224,40 @@
           const targetMode = opt.dataset.to;
           moveWordMode(targetMode, termTitle, itemId);
         });
+      });
+    }
+
+    // Rename button for explain mode
+    const renameExplainBtn = bodyEl.querySelector('#ai-dict-rename-explain-btn');
+    if (renameExplainBtn && itemId) {
+      renameExplainBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const currentTitle = termTitle;
+        const newTitle = prompt('Rename or shorten explanation title (e.g. ABC do ...):', currentTitle);
+        if (newTitle === null) return;
+        const trimmed = newTitle.trim();
+        if (!trimmed || trimmed === currentTitle) return;
+
+        try {
+          await callBackend(`/api/explains/${itemId}/rename`, 'PATCH', { term: trimmed });
+          termTitle = trimmed;
+          const titleTextEl = bodyEl.querySelector('#ai-dict-term-title-text');
+          if (titleTextEl) {
+            titleTextEl.textContent = trimmed;
+            titleTextEl.title = trimmed;
+          }
+          const activeTab = cardTabs.find(t => t.id === activeCardTabId);
+          if (activeTab) {
+            activeTab.word = trimmed;
+            renderWordTabsBar();
+          }
+          if (cachedHistoryData.explain) {
+            const histItem = cachedHistoryData.explain.find(i => i.id === itemId);
+            if (histItem) histItem.text = trimmed;
+          }
+        } catch (err) {
+          alert('Failed to rename: ' + err.message);
+        }
       });
     }
 
@@ -4747,26 +5135,33 @@
     }
   }
 
-  // Dragging support
+  // Dragging support - Pointer Events with Pointer Capture & Capture-phase window release
   function setupDraggable(element, customHeader = null) {
     const header = customHeader || element.querySelector('#ai-dict-drag-header') || element.querySelector('.secondary-card-header');
-    if (!header) return;
+    if (!header || header.dataset.draggableBound === 'true') return;
+    header.dataset.draggableBound = 'true';
 
     let isDragging = false;
     let startX = 0;
     let startY = 0;
     let initialLeft = 0;
     let initialTop = 0;
+    let activePointerId = null;
 
-    const onMouseDown = (e) => {
-      // Don't drag if clicking interactive buttons, selects, or pause menu
-      if (e.target.closest('button') || e.target.closest('select') || e.target.closest('.pause-menu') || e.target.closest('.secondary-action-btn') || e.target.closest('.secondary-load-main-link')) return;
+    const onPointerDown = (e) => {
+      // Only drag on primary click (left mouse button or touch)
+      if (e.button !== undefined && e.button !== 0) return;
+
+      // Don't drag if clicking interactive buttons, selects, inputs, or menus
+      if (e.target.closest('button, select, input, textarea, a, .simple-mt-lang-capsule, .simple-mt-lang-group, .pause-menu, .speech-dropdown-menu, .move-mode-menu, .secondary-action-btn, .secondary-load-main-link')) {
+        return;
+      }
+
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
 
       // CRITICAL: Use getBoundingClientRect() because element is position: fixed.
-      // offsetLeft/offsetTop are relative to offsetParent and break when page is scrolled!
       const rect = element.getBoundingClientRect();
       initialLeft = rect.left;
       initialTop = rect.top;
@@ -4774,12 +5169,34 @@
       element.classList.add('ai-dict-dragging');
       document.body.style.userSelect = 'none';
 
-      window.addEventListener('mousemove', onMouseMove, { passive: false });
-      window.addEventListener('mouseup', onMouseUp, { passive: false });
+      // Capture pointer so pointerup and pointermove are guaranteed to reach the header
+      activePointerId = e.pointerId;
+      if (activePointerId !== undefined && header.setPointerCapture) {
+        try {
+          header.setPointerCapture(activePointerId);
+        } catch (err) {}
+      }
+
+      // Add direct listeners on header
+      header.addEventListener('pointermove', onPointerMove, { passive: false });
+      header.addEventListener('pointerup', onPointerUp, { passive: false });
+      header.addEventListener('pointercancel', onPointerUp, { passive: false });
+      header.addEventListener('lostpointercapture', onPointerUp, { passive: false });
+
+      // Window and document listeners in CAPTURE phase: guarantees un-grasp even if
+      // mouse is released over containerEl (which calls stopPropagation) or host iframes!
+      window.addEventListener('pointermove', onPointerMove, { capture: true, passive: false });
+      window.addEventListener('pointerup', onPointerUp, { capture: true, passive: false });
+      window.addEventListener('pointercancel', onPointerUp, { capture: true, passive: false });
+      window.addEventListener('mousemove', onPointerMove, { capture: true, passive: false });
+      window.addEventListener('mouseup', onPointerUp, { capture: true, passive: false });
+      document.addEventListener('mouseup', onPointerUp, { capture: true, passive: false });
+      window.addEventListener('blur', onPointerUp);
+
       e.preventDefault();
     };
 
-    function onMouseMove(e) {
+    function onPointerMove(e) {
       if (!isDragging) return;
       e.preventDefault();
       const dx = e.clientX - startX;
@@ -4792,16 +5209,38 @@
       element.style.top = `${Math.round(newTop)}px`;
     }
 
-    function onMouseUp() {
+    function onPointerUp(e) {
       if (!isDragging) return;
       isDragging = false;
       element.classList.remove('ai-dict-dragging');
       document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+
+      if (activePointerId !== null && header.releasePointerCapture) {
+        try {
+          if (header.hasPointerCapture && header.hasPointerCapture(activePointerId)) {
+            header.releasePointerCapture(activePointerId);
+          }
+        } catch (err) {}
+      }
+      activePointerId = null;
+
+      header.removeEventListener('pointermove', onPointerMove);
+      header.removeEventListener('pointerup', onPointerUp);
+      header.removeEventListener('pointercancel', onPointerUp);
+      header.removeEventListener('lostpointercapture', onPointerUp);
+
+      window.removeEventListener('pointermove', onPointerMove, { capture: true });
+      window.removeEventListener('pointerup', onPointerUp, { capture: true });
+      window.removeEventListener('pointercancel', onPointerUp, { capture: true });
+      window.removeEventListener('mousemove', onPointerMove, { capture: true });
+      window.removeEventListener('mouseup', onPointerUp, { capture: true });
+      document.removeEventListener('mouseup', onPointerUp, { capture: true });
+      window.removeEventListener('blur', onPointerUp);
     }
 
-    header.addEventListener('mousedown', onMouseDown);
+    header.addEventListener('pointerdown', onPointerDown);
+    header.addEventListener('mousedown', onPointerDown);
+    header.addEventListener('dragstart', (e) => e.preventDefault());
   }
 
   // Resizing support + REMEMBER SIZE IN CHROME STORAGE
@@ -4815,7 +5254,8 @@
     setupHandle(bottomHandle, false, true);
 
     function setupHandle(handle, resizeW, resizeH) {
-      if (!handle) return;
+      if (!handle || handle.dataset.resizableBound === 'true') return;
+      handle.dataset.resizableBound = 'true';
 
       let isResizing = false;
       let startX = 0;
@@ -4825,7 +5265,8 @@
       let startLeft = 0;
       let startTop = 0;
 
-      handle.addEventListener('mousedown', (e) => {
+      const onResizeDown = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
         isResizing = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -4834,29 +5275,38 @@
         const rect = element.getBoundingClientRect();
         startLeft = rect.left;
         startTop = rect.top;
-        document.addEventListener('mousemove', onResizeMove);
-        document.addEventListener('mouseup', onResizeUp);
+
+        window.addEventListener('mousemove', onResizeMove, { capture: true, passive: false });
+        window.addEventListener('mouseup', onResizeUp, { capture: true, passive: false });
+        window.addEventListener('pointermove', onResizeMove, { capture: true, passive: false });
+        window.addEventListener('pointerup', onResizeUp, { capture: true, passive: false });
+        window.addEventListener('blur', onResizeUp);
+
         e.preventDefault();
         e.stopPropagation();
-      });
+      };
 
       function onResizeMove(e) {
         if (!isResizing) return;
+        e.preventDefault();
         if (resizeW) {
-          const newW = Math.max(320, Math.min(window.innerWidth - startLeft - 8, startW + (e.clientX - startX)));
-          element.style.width = `${newW}px`;
+          const newW = Math.max(300, Math.min(window.innerWidth - startLeft - 8, startW + (e.clientX - startX)));
+          element.style.width = `${Math.round(newW)}px`;
         }
         if (resizeH) {
-          const newH = Math.max(240, Math.min(window.innerHeight - startTop - 8, startH + (e.clientY - startY)));
-          element.style.height = `${newH}px`;
+          const newH = Math.max(200, Math.min(window.innerHeight - startTop - 8, startH + (e.clientY - startY)));
+          element.style.height = `${Math.round(newH)}px`;
         }
       }
 
       function onResizeUp() {
         if (!isResizing) return;
         isResizing = false;
-        document.removeEventListener('mousemove', onResizeMove);
-        document.removeEventListener('mouseup', onResizeUp);
+        window.removeEventListener('mousemove', onResizeMove, { capture: true });
+        window.removeEventListener('mouseup', onResizeUp, { capture: true });
+        window.removeEventListener('pointermove', onResizeMove, { capture: true });
+        window.removeEventListener('pointerup', onResizeUp, { capture: true });
+        window.removeEventListener('blur', onResizeUp);
 
         // Remember size in chrome storage!
         const savedW = element.offsetWidth;
@@ -4871,6 +5321,9 @@
           safeStorageSet({ cardWidth: savedW, cardHeight: savedH });
         }
       }
+
+      handle.addEventListener('mousedown', onResizeDown);
+      handle.addEventListener('pointerdown', onResizeDown);
     }
   }
 
@@ -4957,6 +5410,7 @@
     let listType = 'ul';
     let inCodeBlock = false;
     let codeBlockContent = '';
+    let codeBlockLang = '';
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -4964,13 +5418,29 @@
       // Code blocks ```
       if (line.trim().startsWith('```')) {
         if (inCodeBlock) {
-          html += `<pre><code>${escapeHtml(codeBlockContent.trimEnd())}</code></pre>`;
+          if (codeBlockLang === 'mermaid') {
+            const rawChart = codeBlockContent.trimEnd();
+            html += `<div class="ai-dict-mermaid-card">
+              <div class="ai-dict-mermaid-header">
+                <span class="ai-dict-mermaid-title">📊 Mermaid Diagram</span>
+                <button type="button" class="ai-dict-mermaid-copy-btn" data-code="${escapeHtml(rawChart)}" title="Copy diagram code">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <span>Copy Code</span>
+                </button>
+              </div>
+              <pre class="ai-dict-mermaid-pre"><code>${escapeHtml(rawChart)}</code></pre>
+            </div>`;
+          } else {
+            html += `<pre><code>${escapeHtml(codeBlockContent.trimEnd())}</code></pre>`;
+          }
           codeBlockContent = '';
+          codeBlockLang = '';
           inCodeBlock = false;
         } else {
           if (inList) { html += `</${listType}>`; inList = false; }
           inCodeBlock = true;
           codeBlockContent = '';
+          codeBlockLang = line.trim().slice(3).trim().toLowerCase();
         }
         continue;
       }
