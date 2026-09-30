@@ -17,7 +17,7 @@ This document is the **single source of truth** for the technical architecture a
 | **ASGI Server** | Uvicorn | `>=0.29.0` | High-performance ASGI server |
 | **Database ORM** | SQLModel | `>=0.0.16` | Pydantic + SQLAlchemy ORM integration |
 | **Database Engine** | SQLite | 3.x | Embedded local-first storage |
-| **MT Engine** | CTranslate2 | `>=4.8.2` | Fast CPU int8 inference engine for NLLB |
+| **MT Engine (Desktop)**| CTranslate2 | `>=4.8.2` | Fast CPU int8 inference engine for NLLB |
 | **Tokenization** | Tokenizers / SentencePiece | `>=0.23.2` / `>=0.2.2` | Fast BPE tokenization for NLLB-200 |
 | **Model Hub** | Hugging Face Hub | `>=1.32.0` | Auto-downloading & disk cache management |
 | **Language Detection**| Langdetect + Regex | `>=1.0.9` | Script heuristics + ISO code detection |
@@ -27,8 +27,13 @@ This document is the **single source of truth** for the technical architecture a
 | **Vite Tailwind Plugin**| `@tailwindcss/vite` | `^4.3.3` | Vite compiler integration for Tailwind v4 |
 | **Icons** | Lucide React | `^1.31.0` | Consistent UI icon library |
 | **Markdown Rendering**| `react-markdown` + `remark-gfm` | `^10.1.0` / `^4.0.1` | GitHub-flavored markdown parsing |
+| **Diagrams & Math** | `mermaid` + `rehype-katex` | `^11.4.1` / `^7.0.1` | Dynamic diagrams and LaTeX math parsing |
 | **LLM Gateway** | OpenRouter API / Ollama | v1 / local | Unified access to Claude, GPT-4, DeepSeek, etc. |
 | **Extension Standard**| Chrome Extensions MV3 | Manifest V3 | Cross-browser Chromium extension |
+| **Android Framework** | Kotlin / Jetpack Compose | `1.9+` / Compose BOM | Native Android declarative UI |
+| **Android Database**  | Room SQLite (AndroidX) | `2.6.1` | Reactive SQLite persistence on mobile |
+| **Android MT Engine** | Google ML Kit Translate | `17.0.3` | On-device NNAPI accelerated offline MT |
+| **Android Network**   | OkHttp 4 + SSE | `4.12.0` | Streaming HTTP/2 & Server-Sent Events |
 
 ---
 
@@ -41,7 +46,7 @@ ai_dict/
 │       ├── __init__.py
 │       ├── cli.py                  # CLI entry point (Typer + Uvicorn starter)
 │       ├── server.py               # FastAPI application: REST routes, static file serving
-│       ├── ai.py                   # Async LLM integration, OpenRouter, reasoning budgets, Ollama
+│       ├── ai.py                   # Async LLM integration, OpenRouter, reasoning budgets, lenses
 │       ├── mt.py                   # Offline MT engine: CTranslate2, NLLB-200, Flores mappings
 │       ├── db.py                   # SQLModel table models, database engine & session dependency
 │       ├── config.py               # Settings loader, platformdirs user data path resolution
@@ -60,11 +65,14 @@ ai_dict/
 │   │       ├── CompareTab.jsx      # Multi-word side-by-side comparison mode
 │   │       ├── ExplainTab.jsx      # Sentence & paragraph structural breakdown mode
 │   │       ├── TranslationTab.jsx  # Nuanced LLM conceptual translation mode
+│   │       ├── QuickLlmTab.jsx     # Quick LLM analytical lens workbench (Ling Flash)
 │   │       ├── MtTab.jsx           # Fast offline CTranslate2 NLLB machine translation UI
 │   │       ├── CorrectionTab.jsx   # Grammar correction & editing mode
 │   │       ├── LlmTab.jsx          # Dedicated LLM research mode with session history
 │   │       ├── FlashcardTab.jsx    # Spaced repetition study deck & active recall UI
-│   │       ├── SettingsTab.jsx     # App configuration: API keys, prompts, models, backups
+│   │       ├── SettingsTab.jsx     # App configuration: API keys, prompts, models, lenses
+│   │       ├── MarkdownRenderer.jsx# GitHub Flavored Markdown renderer with KaTeX math
+│   │       ├── Mermaid.jsx         # Interactive dynamic Mermaid diagram renderer
 │   │       ├── HoverReviewPopup.jsx# Floating fixed-position preview popup for sidebar items
 │   │       ├── PronunciationModal.jsx # Audio pronunciation breakdown modal
 │   │       ├── SpeechButton.jsx    # Native SpeechSynthesis TTS button
@@ -78,17 +86,34 @@ ai_dict/
 │   ├── background.js               # Service worker for background messaging and context menus
 │   ├── content.js                  # Injected script: Shadow DOM host, events, video handlers
 │   ├── content.css                 # Tokyo Night / Dark themed styles for extension cards
-│   ├── popup.html / popup.js       # Extension toolbar action popup (quick search)
+│   ├── popup.html / popup.js       # Extension toolbar action popup (quick search & lens mode)
 │   ├── popup.css                   # Toolbar popup styling
 │   ├── options.html / options.js   # Extension settings & external dictionary management
 │   ├── options.css                 # Options page styling
 │   ├── rules.json                  # Declarative net request rules
 │   └── icons/                      # Extension icons (16, 32, 48, 128 px)
+├── android/                        # Native Android Mobile Application
+│   ├── app/
+│   │   ├── build.gradle.kts        # Dependencies, compileSdk 34, versioning
+│   │   └── src/main/java/com/aidict/app/
+│   │       ├── MainActivity.kt           # Full Jetpack Compose host
+│   │       ├── PopupActivity.kt          # System PROCESS_TEXT floating card
+│   │       ├── TranslateActivity.kt      # System TRANSLATE intent receiver
+│   │       ├── FloatingBubbleService.kt  # WindowManager overlay service
+│   │       ├── BackgroundSyncService.kt  # Uninterrupted foreground streaming service
+│   │       ├── data/                     # Room AppDatabase, Entities, DAO, LlmRepository
+│   │       ├── ui/                       # Compose screens, viewmodels, dialogs
+│   │       └── utils/                    # DefaultPrompts (Lenses), AutoUpdater, LanguageManager
+│   ├── build_and_push.sh           # Automated version increment, build, and git pusher
+│   ├── release_latest.apk          # Pre-compiled standalone APK
+│   └── README.md                   # Dedicated Android architecture & build guide
+├── .github/workflows/
+│   └── auto_release.yml            # Automated GitHub release action triggered on APK push
 ├── pyproject.toml                  # Python package configuration and dependencies
 ├── AGENTS.md                       # Autonomous agent & contributor operations guide
 ├── DESIGN.md                       # Design philosophy, architectural principles, trade-offs
-├── TECHNICAL_SPECS.md              # This file
-├── ANDROID_PORT_SPECS.md           # Architectural blueprint for future Android port
+├── TECHNICAL_SPECS.md              # This technical specification
+├── CROSS_PLATFORM_SPEC.md          # Monorepo cross-platform parity and synchronization rules
 └── README.md                       # Project overview, installation, and quickstart
 ```
 
@@ -391,6 +416,36 @@ All application endpoints are served under the `/api/` prefix.
 
 ---
 
+### 4.5 Quick LLM & Analytical Lenses (`/api/simple-llm/*`)
+Engineered for ultra-fast, ephemeral lookups with zero automatic database saving and interchangeable analytical lenses (Ling Flash):
+
+- **`GET /api/simple-llm/prompts`**
+  - **Behavior:** Returns an array of analytical lenses ordered by user configuration or default preset sequence.
+  - **Returns:** `List[{ id: str, title: str, prompt: str, emoji?: str, is_default?: bool, is_custom?: bool }]`
+- **`POST /api/simple-llm/prompts`**
+  - **Body:** `{ id?: str, title: str, prompt: str, emoji?: str, is_default?: bool }`
+  - **Behavior:** Upserts a custom analytical lens, updating prompt contents, emoji icons, or title.
+  - **Returns:** Updated list of all lenses.
+- **`DELETE /api/simple-llm/prompts/{prompt_id}`**
+  - **Behavior:** Deletes custom lens or marks a built-in lens as deleted.
+  - **Returns:** Updated list of remaining lenses.
+- **`POST /api/simple-llm/prompts/reorder`**
+  - **Body:** `{ order: List[str] }`
+  - **Behavior:** Persists a new display ranking order for lenses.
+  - **Returns:** Reordered lenses list.
+- **`POST /api/simple-llm/prompts/reset`**
+  - **Behavior:** Resets lens configurations back to factory presets.
+- **`POST /api/simple-llm/lookup`**
+  - **Body:** `{ text: str, prompt_key?: str, model?: str, profile_id?: int }`
+  - **Behavior:** Executes an ephemeral, fast LLM inquiry through the selected lens using `lookup_simple_llm()`. Does NOT save to database automatically.
+  - **Returns:** `{ content: str, model: str, prompt_key: str }`
+- **`POST /api/simple-llm/save`**
+  - **Body:** `{ text: str, content: str, model?: str, profile_id?: int, session_id?: str, stars?: int, color?: str }`
+  - **Behavior:** Explicitly saves an ephemeral Quick LLM result into SQLite as a permanent `LlmRecord`.
+  - **Returns:** `{ record: LlmRecord }`
+
+---
+
 ## 5. Offline MT Pipeline Architecture (`mt.py`)
 
 The offline machine translation subsystem is engineered for zero-cost, private, and sub-second translation:
@@ -474,6 +529,15 @@ Provides instant full Markdown reading when hovering over any sidebar history it
   const y = Math.min(cursor.y, window.innerHeight - popupHeight - 8);
   ```
 - **Interactive Resizing:** 8-direction resize handles update width/height and persist values in `localStorage.getItem('hoverPopupWidth')`.
+
+### 6.4 Markdown & Dynamic Mermaid Rendering Engine (`MarkdownRenderer.jsx`, `Mermaid.jsx`)
+LLM responses often return rich structural breakdowns, linguistics trees, math equations, or conceptual diagrams:
+- **Math Formulae:** Parsed via `remark-math` and rendered through `rehype-katex` with high-contrast formatting.
+- **Mermaid Diagrams:** Dynamic `<Mermaid chart={...} />` component parses code blocks with language `mermaid`:
+  - Asynchronously renders SVG diagrams (`mermaid.render`).
+  - Supports zoom, pan, and full SVG export.
+  - Automatically matches the active UI theme (Dark / Light / Tokyo Night).
+  - Gracefully falls back to syntax-highlighted code blocks if diagram syntax contains errors.
 
 ---
 

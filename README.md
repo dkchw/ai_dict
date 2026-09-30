@@ -19,6 +19,7 @@ All data is stored locally in your private SQLite database. Zero telemetry. Zero
 | **Text Explanation** | Paste complex sentences or literary excerpts for full grammatical breakdowns, idioms, and syntax parsing. | OpenRouter LLM / Ollama |
 | **Conceptual Translation** | Nuanced, culturally accurate translations explaining tone, idioms, and contextual alternatives. | OpenRouter LLM / Ollama |
 | **Offline Machine Translation** | Instant dual-box MT (Google Translate style). Fast, free, runs on CPU, fully offline. Editable translations with auto-save. | CTranslate2 + NLLB-200 (int8) |
+| **Quick LLM (Ling Flash)** | Instant, focused linguistic lookup through interchangeable analytical lenses (Grammar, Nuance, ELI5, TL;DR, Dialogues, Socratic). | OpenRouter LLM / Ollama |
 | **Spaced Repetition Flashcards** | Review vocabulary decks with active recall. 1-col/2-col layouts, instant vs. 3D flip animations, fullscreen mode, keyboard controls. | Native React UI + SQLite |
 | **Text Correction & Polish** | Proofread and edit text with detailed grammatical explanations, style suggestions, and translation comparisons. | OpenRouter LLM / Ollama |
 | **Browser Extension (MV3)** | Definer replacement. Instant text selection bubble, double-click lookup, YouTube/Netflix subtitle piercing, and 1-click MT/LLM toggling. | Manifest V3 (Shadow DOM) |
@@ -170,6 +171,7 @@ For comprehensive documentation, consult the dedicated guides:
 - [DESIGN.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/DESIGN.md) — Architectural philosophy, design principles, dual-track MT/LLM strategy, security considerations, and trade-offs.
 - [TECHNICAL_SPECS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/TECHNICAL_SPECS.md) — Complete technical specification, SQLite database schema, REST API catalog, CTranslate2 threading details, and frontend state machine.
 - [AGENTS.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/AGENTS.md) — Operational guidelines for AI coding agents and human contributors, build contracts, database migration protocols, and common pitfalls.
+- [android/README.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/android/README.md) — Native Android application architecture, Jetpack Compose, Room SQLite, ML Kit offline MT, and build workflows.
 - [extension/README.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/extension/README.md) — Browser extension architecture, YouTube/Netflix subtitle piercing, event shielding, and usage guide.
 
 ---

@@ -53,6 +53,12 @@ cd android && ./build_and_push.sh "Commit message"
 > [!IMPORTANT]
 > **Cross-Platform Synchronous Rule:** When you update a prompt, add an analytical lens, introduce a setting key, or modify a feature on PC, you **MUST simultaneously update the corresponding Android implementation** (see [CROSS_PLATFORM_SPEC.md](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/CROSS_PLATFORM_SPEC.md)). Do not leave the mobile app out of sync.
 
+### 1.5 Android Auto-Updater & Release Asset Contract
+- The Android app includes an in-app updater ([`AutoUpdater.kt`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/android/app/src/main/java/com/aidict/app/utils/AutoUpdater.kt)) targeting `https://api.github.com/repos/dkchw/ai_dict/releases/latest`.
+- The GitHub Actions workflow ([`.github/workflows/auto_release.yml`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/.github/workflows/auto_release.yml)) triggers on push to `main` when `android/release_latest.apk` changes.
+- The release asset MUST follow the naming convention `ai_dict_v<version>.apk` (e.g. `ai_dict_v7.22.apk`). `AutoUpdater.kt` checks for release assets ending in `.apk`.
+- Never alter the target repository in `AutoUpdater.kt` back to the archived standalone repository.
+
 ---
 
 ## 2. SPA Routing: The Catch-All Rule
@@ -196,6 +202,10 @@ When applying OpenRouter's reasoning budget via `apply_reasoning_level()`, injec
 kwargs["extra_body"] = {"reasoning": {"effort": level}}
 ```
 Always wrap calls in a fallback handler: if a user selects a model that does not support the reasoning parameter, catch the `400 Bad Request` and retry without the reasoning block.
+
+### 6.3 Quick LLM & Analytical Lenses Contract
+- **Zero-Save by Default:** Quick LLM requests (`POST /api/simple-llm/lookup`) are strictly ephemeral and MUST NOT write to SQLite history automatically. Persistence only occurs if the user explicitly triggers a bookmark or save action (`POST /api/simple-llm/save`).
+- **Prompt Synchronization:** When modifying built-in lenses in `SIMPLE_LLM_PROMPTS` ([`src/ai_dict/ai.py`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/src/ai_dict/ai.py)), you MUST update `QUICK_LLM_PRESETS` in Android's [`DefaultPrompts.kt`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/android/app/src/main/java/com/aidict/app/utils/DefaultPrompts.kt) to ensure uniform lens behavior.
 
 ---
 
