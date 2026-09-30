@@ -34,36 +34,88 @@ All data is stored locally in your private SQLite database. Zero telemetry. Zero
 
 ## 🏛️ Architecture Overview
 
-┌────────────────────────────────────────────────────────────────────────┐
-│                        User Client Layer                               │
-├───────────────────┬───────────────────┬────────────────────────────────┤
-│ Browser Extension │ React SPA Web UI  │   Native Android Mobile App    │
-│ (Manifest V3)     │ (React 19 / Vite) │  (Kotlin / Jetpack Compose)    │
-│ - Bubble & Card   │ - Multi-tab Modes │  - 24/7 Foreground Engine      │
-│ - Subtitle Pierce │ - Flashcards Deck │  - System Bubble & PROCESS_TEXT│
-│ - Instant MT/LLM  │ - Full Management │  - Google ML Kit On-Device MT  │
-└─────────┬─────────┴─────────┬─────────┴───────────────┬────────────────┘
-          │                   │                         │
-          │ HTTP REST API     │ HTTP REST API           │ Direct OkHttp / SSE
-          ▼                   ▼                         ▼
-┌───────────────────────────────────────┐   ┌────────────────────────────┐
-│ FastAPI Backend Server (Port 4321)    │   │ Android App Core (Local)   │
-│ - server.py: Fat Controller & SPA host│   │ - Room SQLite Database     │
-│ - mt.py: CTranslate2 + NLLB-200 (CPU) │   │ - Google ML Kit Engine     │
-│ - ai.py: OpenRouter / Ollama Gateway  │   │ - LlmRepository + Streaming│
-│ - db.py: SQLModel SQLite Engine       │   │ - BackgroundSyncService    │
-└───────────────────┬───────────────────┘   └─────────────┬──────────────┘
-                    │                                     │
-                    ▼                                     ▼
-        ┌─────────────────────────────────────────────────────┐
-        │ OpenRouter AI Gateway (Claude, DeepSeek, GPT-4o)    │
-        └─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Clients["🖥️ / 📱 Client Interfaces"]
+        FE["🖥️ React 19 WebApp<br/>(Desktop SPA / Multi-Tab)"]
+        EXT["🧩 Chrome Extension MV3<br/>(Shadow DOM / Subtitle Piercing)"]
+        ANDROID["📱 Native Android App<br/>(Kotlin / Jetpack Compose)"]
+    end
+
+    subgraph PC_Core["💻 PC Desktop Backend (Port 4321)"]
+        FASTAPI["FastAPI REST Controller<br/>(server.py)"]
+        CT2["CTranslate2 + NLLB-200<br/>(CPU int8 Offline MT)"]
+        SQLMODEL["SQLModel SQLite Engine<br/>(~/.local/share/ai_dict/)"]
+        FASTAPI --> CT2
+        FASTAPI --> SQLMODEL
+    end
+
+    subgraph Mobile_Core["📱 Mobile On-Device Core"]
+        ROOM["Room SQLite Database<br/>(Reactive Flow)"]
+        MLKIT["Google ML Kit Engine<br/>(On-Demand ~30MB Packs)"]
+        BG["BackgroundSyncService<br/>(Foreground + WakeLock)"]
+        ANDROID --> ROOM
+        ANDROID --> MLKIT
+        ANDROID --> BG
+    end
+
+    subgraph Cloud["☁️ Universal AI Cloud"]
+        OR["OpenRouter AI Gateway<br/>(Claude, DeepSeek, GPT-4o)"]
+        OLLAMA["Local Ollama Fallback<br/>(Optional Local LLM)"]
+    end
+
+    FE -->|HTTP / REST| FASTAPI
+    EXT -->|HTTP / REST| FASTAPI
+    FASTAPI -->|AsyncOpenAI| OR
+    FASTAPI -.->|Fallback| OLLAMA
+    ANDROID -->|OkHttp HTTP/2 SSE| OR
 ```
 
 - **PC Backend:** Python 3.10+ (tested on 3.11+), FastAPI, SQLModel, Uvicorn, CTranslate2, Tokenizers, SentencePiece.
-- **PC Frontend:** React 19, Vite 8, TailwindCSS 4, Lucide React, react-markdown.
-- **PC Extension:** Chrome Manifest V3, Shadow DOM style encapsulation, deep selection traversal.
+- **PC Frontend:** React 19, Vite 8, TailwindCSS 4, Lucide React, react-markdown, mermaid, KaTeX.
+- **PC Extension:** Chrome Manifest V3, Shadow DOM style encapsulation, deep subtitle traversal.
 - **Android App:** Kotlin 1.9+, Jetpack Compose, Room SQLite, Google ML Kit (Translate & Language ID), OkHttp SSE, compileSdk 34.
+
+---
+
+## ⚖️ WebApp vs. Phone App: Comparison & Parity
+
+AI Dict is engineered as a unified cross-platform system. Both desktop and mobile editions share the same pedagogical foundation: **Production Over Recognition**, **Zero-Memory Default Offline Translation**, and **Interchangeable Analytical Lenses**.
+
+However, because desktop workstations and mobile phones have different memory envelopes, compute architectures, and operating system permissions, each client is custom-tailored for its form factor:
+
+### Feature Parity Matrix
+
+| Feature / Capability | 🖥️ PC WebApp | 🧩 Chrome Extension | 📱 Android Phone App | Architectural Rationale & Parity |
+|---|---|---|---|---|
+| **Intelligent Dictionary (`dict`)** | ✅ Multi-tab, IPA, etymology, CEFR, collocations | ✅ Floating card / selection bubble | ✅ Dedicated tab with auto-suggestions & history | **100% Identical Prompt & Workflow** |
+| **Word Comparison (`compare`)** | ✅ Multi-word side-by-side nuance analysis | ✅ Toolbar popup quick comparison | ✅ Dedicated screen with cross-mode handoff | **100% Identical Prompt** |
+| **Sentence Breakdown (`explain`)** | ✅ Clause parsing & ellipsis patterns | ✅ Quick selection breakdown | ✅ Dedicated screen & ellipsis analysis | **100% Identical Prompt** |
+| **Concept Translation (`translate`)**| ✅ Idiomatic & cultural reverse exploration | ✅ Quick concept lookup | ✅ Dedicated screen with source/target selection | **100% Identical Prompt** |
+| **Text Correction (`correct`)** | ✅ Proofread with grammar & translation options | ✅ Quick card text polish | ✅ Dedicated screen & MT tier selector | **100% Identical Prompt & Flow** |
+| **Quick LLM / Lenses (Ling Flash)** | ✅ 6 built-in lenses + custom lens manager & reorder | ✅ Instant lens selector & prompt switching | ✅ Analytical presets (`DefaultPrompts.kt`) | **100% Compatible Presets & Contracts** |
+| **Follow-Up Contextual Chat** | ✅ Multi-turn conversation retention per item | ✅ Interactive follow-up input in card | ✅ Interactive follow-up input per Word item | **100% Identical Conversation Continuity** |
+| **Profiles & Scoping** | ✅ Scoped SQLite tables per `profile_id` | ✅ Profile switcher in toolbar menu | ✅ Scoped Room entities & profile inheritance | **100% Functional Parity** |
+| **Offline Machine Translation** | ✅ Meta NLLB-200 (600M distilled via CTranslate2 CPU) | ✅ Sub-second card lookup (zero-memory default) | ✅ Google ML Kit On-Device (~30MB/pack via NNAPI) | **Optimized per Hardware:** NLLB-200 requires ~1.2GB RAM (ideal for PC); ML Kit uses ~30MB packs with zero battery drain on mobile. |
+| **Database Architecture** | ✅ Segregated SQLModel tables (`Word`, `Comparison`, etc.) | ❌ Connects via REST API | ✅ Polymorphic Room table (`Word(mode=...)`) | **Optimized per UX:** Segregated tables suit multi-tab desktop multitasking; unified table enables smooth swipe navigation and 1-tap mode morphing on mobile. |
+| **Contextual Text Capture** | ❌ Confined to browser | ✅ Isolated Shadow DOM with subtitle piercing | ✅ System Floating Bubble & `PROCESS_TEXT` menu | **Platform-Native:** Browser extension pierces YouTube/Netflix DOM; Android overlay floats over all native apps (Kindle, Twitter, YouTube). |
+| **Background Streaming Protection** | ✅ Standard persistent local daemon (FastAPI / Uvicorn) | ❌ Extension service worker | ✅ `BackgroundSyncService` + `PARTIAL_WAKE_LOCK` | **OS Resilience:** Prevents Android OS Low Memory Killer (OOM) from aborting long-running LLM reasoning streams (e.g. DeepSeek R1). |
+| **Vocabulary Review & Deck** | ✅ Spaced repetition flashcards (1-col/2-col, 3D flip) | ❌ Ephemeral reading view | ✅ Notes & saved words review screen | **Complementary:** WebApp specializes in deep active-recall drills; mobile provides on-the-go review. |
+| **Data Backup & Portability** | ✅ JSON & timestamped ZIP archive export/import | ❌ Managed via WebApp backend | ✅ Full JSON backup export/import (`BackupHelper`) | **100% JSON Schema Compatible** across PC and mobile. |
+
+### Technical Divergences (Why Keep As Such)
+
+1. **Offline MT: CTranslate2 + NLLB-200 (PC) vs. Google ML Kit (Android)**
+   - **PC Desktop:** Modern desktop CPUs have large L3 caches, AVX2 SIMD instruction sets, and 16GB+ RAM. Meta NLLB-200 (600M distilled) provides state-of-the-art offline translation across 200+ languages without network overhead.
+   - **Android Mobile:** Loading a 1.2GB model into mobile RAM triggers Android's Low Memory Killer (OOM) and causes thermal throttling. Google ML Kit downloads lightweight ~30MB packs on-demand and leverages mobile NPUs/GPUs (NNAPI) for sub-80ms translations with minimal battery impact.
+
+2. **Database: Segregated SQLModel Tables (PC) vs. Polymorphic Room Entity (Android)**
+   - **PC Desktop:** Web users frequently keep 10+ tabs open across multiple browser windows. Discrete tables (`Word`, `Comparison`, `Explain`, `Translation`, `Correction`, `LlmRecord`, `MtRecord`) prevent lock contention and enable specialized indexing.
+   - **Android Mobile:** Mobile navigation uses a fluid `HorizontalPager`. A single polymorphic `Word` table allows reactive Kotlin `Flow<List<Word>>` to power cross-mode suggestions, unified history searches, and **1-tap mode morphing** (`moveWordToModeAndRegenerate`) without complex table migrations.
+
+3. **Context Capture: Shadow DOM (PC) vs. System Overlay & Intents (Android)**
+   - **PC Desktop:** Web applications require Shadow DOM isolation, recursive tree crawling (`getDeepSelection`) to penetrate video players, and event shielding (`stopPropagation`) to prevent keyboard shortcut capture on video platforms.
+   - **Android Mobile:** Mobile browsers do not support desktop extensions. Android uses `FloatingBubbleService` (`SYSTEM_ALERT_WINDOW`) and `PROCESS_TEXT` intents to provide system-wide text lookups across any app (Kindle, Chrome, Twitter).
 
 ---
 
