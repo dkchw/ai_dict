@@ -56,8 +56,25 @@ cd android && ./build_and_push.sh "Commit message"
 ### 1.5 Android Auto-Updater & Release Asset Contract
 - The Android app includes an in-app updater ([`AutoUpdater.kt`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/android/app/src/main/java/com/aidict/app/utils/AutoUpdater.kt)) targeting `https://api.github.com/repos/dkchw/ai_dict/releases/latest`.
 - The GitHub Actions workflow ([`.github/workflows/auto_release.yml`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/.github/workflows/auto_release.yml)) triggers on push to `main` when `android/release_latest.apk` changes.
-- The release asset MUST follow the naming convention `ai_dict_v<version>.apk` (e.g. `ai_dict_v7.22.apk`). `AutoUpdater.kt` checks for release assets ending in `.apk`.
 - Never alter the target repository in `AutoUpdater.kt` back to the archived standalone repository.
+
+---
+
+### 1.6 Continuous Version Bump & Release Contract (MANDATORY)
+> [!IMPORTANT]
+> **Every single time you modify ANY source code, add/remove features, fix bugs, or build new things in this repository, you MUST bump the version numbers across all affected components before releasing or concluding your task.** Never leave the version unchanged after writing code.
+
+1. **Android Version:**
+   - In [`android/app/build.gradle.kts`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/android/app/build.gradle.kts):
+     - Increment `versionCode` by 1.
+     - Increment `versionName` (e.g., `7.23` -> `7.24`).
+   - Assemble package: `cd android && ./gradlew assembleDebug`.
+   - Update release artifact: `cp app/build/outputs/apk/debug/app-debug.apk release_latest.apk`.
+2. **Web / Backend / Extension Version:**
+   - In [`pyproject.toml`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/pyproject.toml): increment version (e.g., `11.1.0` -> `11.2.0`).
+   - In [`frontend/package.json`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/frontend/package.json): increment version.
+   - In [`extension/manifest.json`](file:///run/host/home/dkchw/Documents/Code/Ongoing/Repo/AI_Dict/extension/manifest.json): increment version.
+   - Compile frontend assets: `cd frontend && npm run build`.
 
 ---
 
