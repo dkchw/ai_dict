@@ -563,6 +563,21 @@ export default function QuickLlmTab({
               <button
                 type="button"
                 onClick={() => {
+                  const cur = lenses.find(l => l.id === selectedPrompt) || lenses[0]
+                  if (cur) {
+                    handleDeleteLens(cur.id, cur.name)
+                  }
+                }}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg text-rose-700 dark:text-rose-300 bg-rose-50/70 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200/70 dark:border-rose-800/60 transition cursor-pointer"
+                title="Remove the currently active lens"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Remove Lens</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setEditingLens(null)
                   setShowManageModal(true)
                 }}
@@ -576,7 +591,7 @@ export default function QuickLlmTab({
           </div>
 
           {/* Lenses Pill Buttons */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 items-center">
             {lenses.map((preset) => {
               const isActive = selectedPrompt === preset.id
               const icon = preset.icon || '⚡'
@@ -603,6 +618,17 @@ export default function QuickLlmTab({
                 </button>
               )
             })}
+
+            {/* Add Lens Pill Button */}
+            <button
+              type="button"
+              onClick={handleOpenAddLens}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition shadow-xs cursor-pointer"
+              title="Create a new custom analytical lens"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Lens</span>
+            </button>
           </div>
 
           {/* Active Lens Prompt Quick Viewer & Drawer */}
@@ -641,6 +667,18 @@ export default function QuickLlmTab({
                     >
                       <Edit3 className="w-3 h-3" />
                       <span>Edit Prompt</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteLens(activePreset.id, activePreset.name)
+                      }}
+                      className="text-[11px] font-bold text-rose-700 dark:text-rose-300 hover:underline flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 border border-rose-200/60 dark:border-rose-800/60"
+                      title="Remove this lens"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Remove</span>
                     </button>
                     {showPromptDrawer ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
                   </div>

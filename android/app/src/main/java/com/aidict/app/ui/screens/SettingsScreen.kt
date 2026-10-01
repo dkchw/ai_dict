@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.aidict.app.ui.viewmodels.SettingsViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -1415,10 +1416,16 @@ fun QuickLlmLensPromptsInspector(
 ) {
     val customLensesJson by viewModel.getSettingFlow("SIMPLE_LLM_CUSTOM_LENSES", "").collectAsState()
     val customLenses = remember(customLensesJson) { com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson) }
-    val lenses = remember(customLenses) { (com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS.values + customLenses).distinctBy { it.id } }
+    val deletedLensesJson by viewModel.getSettingFlow("SIMPLE_LLM_DELETED_LENSES", "").collectAsState()
+    val deletedLenses = remember(deletedLensesJson) { com.aidict.app.utils.DefaultPrompts.parseDeletedLenses(deletedLensesJson) }
+    val lenses = remember(customLenses, deletedLenses) {
+        (com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS.values + customLenses)
+            .distinctBy { it.id }
+            .filter { it.id !in deletedLenses }
+    }
 
     var selectedLensKey by remember { mutableStateOf(lenses.firstOrNull()?.id ?: "quick_glance") }
-    val currentLens = lenses.find { it.id == selectedLensKey } ?: lenses.first()
+    val currentLens = lenses.find { it.id == selectedLensKey } ?: lenses.firstOrNull() ?: com.aidict.app.utils.QuickLlmLens("quick_glance", "Quick Glance", "⚡", "Core definition", com.aidict.app.utils.DefaultPrompts.DEFAULT_SIMPLE_LLM_PROMPT)
 
     val globalKey = "SIMPLE_LLM_PROMPT_${currentLens.id.uppercase()}"
     val profileKey = if (selectedProfileId != null) "PROFILE_${selectedProfileId}_$globalKey" else globalKey
@@ -1434,6 +1441,13 @@ fun QuickLlmLensPromptsInspector(
     var isDirty by remember(selectedLensKey) { mutableStateOf(false) }
     var saveSuccess by remember(selectedLensKey) { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
+    var showAddLensDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    var newLensName by remember { mutableStateOf("") }
+    var newLensIcon by remember { mutableStateOf("💡") }
+    var newLensDesc by remember { mutableStateOf("") }
+    var newLensPrompt by remember { mutableStateOf(com.aidict.app.utils.DefaultPrompts.DEFAULT_SIMPLE_LLM_PROMPT) }
 
     LaunchedEffect(displayText) {
         if (!isDirty && promptInput != displayText) {
@@ -1524,6 +1538,44 @@ fun QuickLlmLensPromptsInspector(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = { showAddLensDialog = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Lens", modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Lens", style = MaterialTheme.typography.labelSmall)
+                }
+
+                OutlinedButton(
+                    onClick = { showDeleteConfirmDialog = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove Lens", modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Remove Lens", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            TextButton(
+                onClick = {
+                    viewModel.resetAllLenses(selectedProfileId)
+                },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Icon(Icons.Default.Restore, contentDescription = "Restore Defaults", modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("Restore Defaults", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
         OutlinedTextField(
             value = promptInput,
             onValueChange = {
@@ -1568,6 +1620,113 @@ fun QuickLlmLensPromptsInspector(
                     fontWeight = FontWeight.Bold
                 )
             }
+        }
+
+        // Add Lens Dialog
+        if (showAddLensDialog) {
+            AlertDialog(
+                onDismissRequest = { showAddLensDialog = false },
+                title = { Text("Add Analytical Lens") },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = newLensIcon,
+                                onValueChange = { newLensIcon = it },
+                                label = { Text("Icon") },
+                                modifier = Modifier.width(72.dp),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = newLensName,
+                                onValueChange = { newLensName = it },
+                                label = { Text("Lens Name") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                        }
+                        OutlinedTextField(
+                            value = newLensDesc,
+                            onValueChange = { newLensDesc = it },
+                            label = { Text("Short Description") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = newLensPrompt,
+                            onValueChange = { newLensPrompt = it },
+                            label = { Text("System Prompt") },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 240.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val cleanName = newLensName.trim()
+                            if (cleanName.isNotBlank()) {
+                                val newId = "custom_${System.currentTimeMillis()}"
+                                val newLens = com.aidict.app.utils.QuickLlmLens(
+                                    id = newId,
+                                    name = cleanName,
+                                    icon = newLensIcon.trim().ifBlank { "💡" },
+                                    description = newLensDesc.trim(),
+                                    prompt = newLensPrompt.trim().ifBlank { com.aidict.app.utils.DefaultPrompts.DEFAULT_SIMPLE_LLM_PROMPT }
+                                )
+                                viewModel.saveCustomLens(newLens, selectedProfileId)
+                                selectedLensKey = newId
+                                showAddLensDialog = false
+                            }
+                        }
+                    ) {
+                        Text("Add Lens")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddLensDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Delete / Remove Lens Confirmation Dialog
+        if (showDeleteConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmDialog = false },
+                title = { Text("Remove Lens") },
+                text = {
+                    Text(
+                        "Are you sure you want to remove \"${currentLens.icon} ${currentLens.name}\"?\n\nYou can restore all built-in lenses at any time by tapping \"Restore Defaults\"."
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deleteLens(currentLens.id, selectedProfileId)
+                            showDeleteConfirmDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Remove")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

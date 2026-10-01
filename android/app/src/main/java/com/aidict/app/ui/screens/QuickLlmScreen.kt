@@ -70,6 +70,7 @@ fun QuickLlmScreen(
     var showConfigDrawer by remember { mutableStateOf(false) }
     var showEditPromptDialog by remember { mutableStateOf(false) }
     var showAddLensDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showMoveToModeDialog by remember { mutableStateOf(false) }
 
     // TTS Setup
@@ -322,32 +323,47 @@ fun QuickLlmScreen(
                                     Text("Edit ${currentLens.name} Prompt", style = MaterialTheme.typography.labelSmall)
                                 }
 
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Button(
-                                        onClick = { showAddLensDialog = true },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = "Add Lens", modifier = Modifier.size(14.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Add Lens", style = MaterialTheme.typography.labelSmall)
-                                    }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Button(
+                                            onClick = { showAddLensDialog = true },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = "Add Lens", modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Add Lens", style = MaterialTheme.typography.labelSmall)
+                                        }
 
-                                    if (currentLens.id.startsWith("custom_")) {
                                         OutlinedButton(
-                                            onClick = {
-                                                coroutineScope.launch {
-                                                    viewModel.deleteCustomLens(currentLens.id, profileId)
-                                                    val updated = viewModel.getQuickLenses(profileId)
-                                                    lenses = updated
-                                                    selectedLensKey = updated.firstOrNull()?.id ?: "quick_glance"
-                                                    Toast.makeText(context, "Deleted custom lens", Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
+                                            onClick = { showDeleteConfirmDialog = true },
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete Lens", modifier = Modifier.size(14.dp))
+                                            Icon(Icons.Default.DeleteOutline, contentDescription = "Remove Lens", modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Remove Lens", style = MaterialTheme.typography.labelSmall)
                                         }
+                                    }
+
+                                    TextButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                viewModel.resetAllLenses(profileId)
+                                                val updated = viewModel.getQuickLenses(profileId)
+                                                lenses = updated
+                                                selectedLensKey = updated.firstOrNull()?.id ?: "quick_glance"
+                                                Toast.makeText(context, "Restored all default lenses", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                    ) {
+                                        Icon(Icons.Default.Restore, contentDescription = "Restore Defaults", modifier = Modifier.size(14.dp))
+                                        Spacer(Modifier.width(2.dp))
+                                        Text("Restore Defaults", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
@@ -396,11 +412,36 @@ fun QuickLlmScreen(
                             }
                         }
                     }
+
+                    // Add Lens Pill Chip
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.clickable { showAddLensDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Lens", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(3.dp))
+                            Text(
+                                text = "Add Lens",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(4.dp))
 
-                // Lens Subtitle Description + Direct Edit Button
+                // Lens Subtitle Description + Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -414,16 +455,40 @@ fun QuickLlmScreen(
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(
-                        onClick = { showEditPromptDialog = true },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit Prompt",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showEditPromptDialog = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit Prompt",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { showAddLensDialog = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Add Lens",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { showDeleteConfirmDialog = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.DeleteOutline,
+                                contentDescription = "Remove Lens",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -966,6 +1031,40 @@ fun QuickLlmScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showAddLensDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showDeleteConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirmDialog = false },
+                title = { Text("Remove Lens") },
+                text = {
+                    Text(
+                        "Are you sure you want to remove \"${currentLens.icon} ${currentLens.name}\"?\n\nYou can add custom lenses again at any time or restore built-in presets using \"Restore Defaults\"."
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                viewModel.deleteLens(currentLens.id, profileId)
+                                val updated = viewModel.getQuickLenses(profileId)
+                                lenses = updated
+                                selectedLensKey = updated.firstOrNull()?.id ?: "quick_glance"
+                                showDeleteConfirmDialog = false
+                                Toast.makeText(context, "✓ Removed lens ${currentLens.name}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Remove")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmDialog = false }) {
                         Text("Cancel")
                     }
                 }

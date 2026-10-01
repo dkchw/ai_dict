@@ -465,4 +465,25 @@ STRICT LANGUAGE ENFORCEMENT RULES:
         }
         return arr.toString()
     }
+
+    fun parseDeletedLenses(jsonStr: String?): Set<String> {
+        if (jsonStr.isNullOrBlank()) return emptySet()
+        val set = mutableSetOf<String>()
+        try {
+            val arr = org.json.JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val s = arr.optString(i)
+                if (s.isNotBlank()) set.add(s)
+            }
+        } catch (e: Exception) {
+            jsonStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { set.add(it) }
+        }
+        return set
+    }
+
+    fun serializeDeletedLenses(deleted: Set<String>): String {
+        val arr = org.json.JSONArray()
+        deleted.forEach { arr.put(it) }
+        return arr.toString()
+    }
 }

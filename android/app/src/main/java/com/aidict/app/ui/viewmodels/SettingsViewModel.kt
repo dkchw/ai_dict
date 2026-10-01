@@ -272,7 +272,8 @@ class SettingsViewModel(
                 "DICT_REASONING", "COMPARE_REASONING", "EXPLAIN_REASONING", "TRANSLATE_REASONING", "CORRECT_REASONING",
                 "FALLBACK_REASONING", "CHAT_REASONING",
                 "DICT_PROMPT", "COMPARE_PROMPT", "EXPLAIN_PROMPT", "TRANSLATE_PROMPT", "CORRECT_PROMPT",
-                "SIMPLE_LLM_MODEL", "SIMPLE_LLM_DEFAULT_PROMPT"
+                "SIMPLE_LLM_MODEL", "SIMPLE_LLM_DEFAULT_PROMPT",
+                "SIMPLE_LLM_CUSTOM_LENSES", "SIMPLE_LLM_DELETED_LENSES"
             )
             for (k in keys) {
                 val value = if (fromProfileId == null) {
@@ -454,6 +455,59 @@ class SettingsViewModel(
             val newEntry = "${name.trim()}|${flagIso.trim()}"
             val newCustom = if (current.isBlank()) newEntry else "$current,$newEntry"
             database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("CUSTOM_LANGUAGES", newCustom))
+        }
+    }
+
+    fun saveCustomLens(lens: com.aidict.app.utils.QuickLlmLens, profileId: Int?) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val key = if (profileId != null) "PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES" else "SIMPLE_LLM_CUSTOM_LENSES"
+            val raw = database.appDao().getSetting(key)?.value ?: database.appDao().getSetting("SIMPLE_LLM_CUSTOM_LENSES")?.value ?: ""
+            val list = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(raw).toMutableList()
+            val idx = list.indexOfFirst { it.id == lens.id }
+            if (idx >= 0) list[idx] = lens else list.add(lens)
+            val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(list)
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting(key, newJson))
+            if (profileId != null) database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+
+            // Un-delete if deleted
+            val delKey = if (profileId != null) "PROFILE_${profileId}_SIMPLE_LLM_DELETED_LENSES" else "SIMPLE_LLM_DELETED_LENSES"
+            val delRaw = database.appDao().getSetting(delKey)?.value ?: database.appDao().getSetting("SIMPLE_LLM_DELETED_LENSES")?.value ?: ""
+            val deleted = com.aidict.app.utils.DefaultPrompts.parseDeletedLenses(delRaw).toMutableSet()
+            if (deleted.remove(lens.id)) {
+                val newDelJson = com.aidict.app.utils.DefaultPrompts.serializeDeletedLenses(deleted)
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting(delKey, newDelJson))
+                if (profileId != null) database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_DELETED_LENSES", newDelJson))
+            }
+        }
+    }
+
+    fun deleteLens(lensId: String, profileId: Int?) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val key = if (profileId != null) "PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES" else "SIMPLE_LLM_CUSTOM_LENSES"
+            val raw = database.appDao().getSetting(key)?.value ?: database.appDao().getSetting("SIMPLE_LLM_CUSTOM_LENSES")?.value ?: ""
+            val list = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(raw).toMutableList()
+            val wasCustom = list.any { it.id == lensId }
+            if (wasCustom) {
+                list.removeAll { it.id == lensId }
+                val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(list)
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting(key, newJson))
+                if (profileId != null) database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+            }
+
+            val delKey = if (profileId != null) "PROFILE_${profileId}_SIMPLE_LLM_DELETED_LENSES" else "SIMPLE_LLM_DELETED_LENSES"
+            val delRaw = database.appDao().getSetting(delKey)?.value ?: database.appDao().getSetting("SIMPLE_LLM_DELETED_LENSES")?.value ?: ""
+            val deleted = com.aidict.app.utils.DefaultPrompts.parseDeletedLenses(delRaw).toMutableSet()
+            deleted.add(lensId)
+            val newDelJson = com.aidict.app.utils.DefaultPrompts.serializeDeletedLenses(deleted)
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting(delKey, newDelJson))
+            if (profileId != null) database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_DELETED_LENSES", newDelJson))
+        }
+    }
+
+    fun resetAllLenses(profileId: Int?) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (profileId != null) database.appDao().deleteSetting("PROFILE_${profileId}_SIMPLE_LLM_DELETED_LENSES")
+            database.appDao().deleteSetting("SIMPLE_LLM_DELETED_LENSES")
         }
     }
 }

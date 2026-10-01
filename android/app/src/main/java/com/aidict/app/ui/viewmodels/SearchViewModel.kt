@@ -451,7 +451,12 @@ class SearchViewModel(
             val basePresets = com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS.values.toList()
             val customLensesJson = getProfileSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES") ?: ""
             val customLenses = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson)
-            val combined = (basePresets + customLenses).distinctBy { it.id }
+            val deletedJson = getProfileSetting(profileId, "SIMPLE_LLM_DELETED_LENSES") ?: ""
+            val deleted = com.aidict.app.utils.DefaultPrompts.parseDeletedLenses(deletedJson)
+
+            val combined = (basePresets + customLenses)
+                .distinctBy { it.id }
+                .filter { it.id !in deleted }
 
             // Apply any prompt overrides for each lens
             combined.map { lens ->
@@ -478,17 +483,48 @@ class SearchViewModel(
             val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(existing)
             database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES", newJson))
             database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+
+            // Un-delete if this lens was previously marked as deleted
+            val deletedJson = getProfileSetting(profileId, "SIMPLE_LLM_DELETED_LENSES") ?: ""
+            val deleted = com.aidict.app.utils.DefaultPrompts.parseDeletedLenses(deletedJson).toMutableSet()
+            if (deleted.remove(lens.id)) {
+                val newDeletedJson = com.aidict.app.utils.DefaultPrompts.serializeDeletedLenses(deleted)
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_DELETED_LENSES", newDeletedJson))
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_DELETED_LENSES", newDeletedJson))
+            }
+        }
+    }
+
+    suspend fun deleteLens(lensId: String, profileId: Int) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val customLensesJson = getProfileSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES") ?: ""
+            val existing = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson).toMutableList()
+            val wasCustom = existing.any { it.id == lensId }
+            if (wasCustom) {
+                existing.removeAll { it.id == lensId }
+                val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(existing)
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES", newJson))
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+            }
+
+            // In all cases (built-in or custom), add to deleted set
+            val deletedJson = getProfileSetting(profileId, "SIMPLE_LLM_DELETED_LENSES") ?: ""
+            val deleted = com.aidict.app.utils.DefaultPrompts.parseDeletedLenses(deletedJson).toMutableSet()
+            deleted.add(lensId)
+            val newDeletedJson = com.aidict.app.utils.DefaultPrompts.serializeDeletedLenses(deleted)
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_DELETED_LENSES", newDeletedJson))
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_DELETED_LENSES", newDeletedJson))
         }
     }
 
     suspend fun deleteCustomLens(lensId: String, profileId: Int) {
+        deleteLens(lensId, profileId)
+    }
+
+    suspend fun resetAllLenses(profileId: Int) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val customLensesJson = getProfileSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES") ?: ""
-            val existing = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson).toMutableList()
-            existing.removeAll { it.id == lensId }
-            val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(existing)
-            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES", newJson))
-            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+            database.appDao().deleteSetting("PROFILE_${profileId}_SIMPLE_LLM_DELETED_LENSES")
+            database.appDao().deleteSetting("SIMPLE_LLM_DELETED_LENSES")
         }
     }
 
