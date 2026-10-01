@@ -172,6 +172,20 @@ class SearchViewModel(
             }
         }
 
+    private var quickLlmJob: kotlinx.coroutines.Job? = null
+    private var _quickLlmInput = mutableStateOf("")
+    var quickLlmInput: String
+        get() = _quickLlmInput.value
+        set(value) {
+            _quickLlmInput.value = value
+            quickLlmJob?.cancel()
+            quickLlmJob = viewModelScope.launch {
+                kotlinx.coroutines.delay(300)
+                database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("QUICK_LLM_DRAFT", value))
+                updateSuggestions("quick_llm", value)
+            }
+        }
+
     init {
         viewModelScope.launch {
             _searchInput.value = database.appDao().getSetting("DICT_DRAFT")?.value ?: ""
@@ -179,6 +193,7 @@ class SearchViewModel(
             _explainInput.value = database.appDao().getSetting("EXPLAIN_DRAFT")?.value ?: ""
             _compareInput.value = database.appDao().getSetting("COMPARE_DRAFT")?.value ?: ""
             _correctInput.value = database.appDao().getSetting("CORRECT_DRAFT")?.value ?: ""
+            _quickLlmInput.value = database.appDao().getSetting("QUICK_LLM_DRAFT")?.value ?: ""
         }
     }
 
@@ -197,14 +212,18 @@ class SearchViewModel(
 
     private val _correctState = MutableStateFlow(SearchState())
     val correctState: StateFlow<SearchState> = _correctState.asStateFlow()
+
+    private val _quickLlmState = MutableStateFlow(SearchState())
+    val quickLlmState: StateFlow<SearchState> = _quickLlmState.asStateFlow()
     
     fun getUiState(mode: String): MutableStateFlow<SearchState> {
-        return when (mode) {
+        return when (mode.lowercase()) {
             "dict" -> _dictState
             "compare" -> _compareState
             "translate" -> _translateState
             "explain" -> _explainState
             "correct" -> _correctState
+            "quick_llm", "quickllm", "quick" -> _quickLlmState
             else -> _dictState
         }
     }
@@ -416,13 +435,84 @@ class SearchViewModel(
     
     suspend fun getProfileSetting(profileId: Int, key: String): String? {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            database.appDao().getSetting("PROFILE_${profileId}_$key")?.value
+            database.appDao().getSetting("PROFILE_${profileId}_$key")?.value?.trim()?.takeIf { it.isNotEmpty() }
+                ?: database.appDao().getSetting(key)?.value?.trim()?.takeIf { it.isNotEmpty() }
         }
     }
 
     fun saveProfileSetting(profileId: Int, key: String, value: String) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_$key", value))
+        }
+    }
+
+    suspend fun getQuickLenses(profileId: Int): List<com.aidict.app.utils.QuickLlmLens> {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val basePresets = com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS.values.toList()
+            val customLensesJson = getProfileSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES") ?: ""
+            val customLenses = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson)
+            val combined = (basePresets + customLenses).distinctBy { it.id }
+
+            // Apply any prompt overrides for each lens
+            combined.map { lens ->
+                val overridePrompt = getProfileSetting(profileId, "SIMPLE_LLM_PROMPT_${lens.id.uppercase()}")
+                if (!overridePrompt.isNullOrBlank()) {
+                    lens.copy(prompt = overridePrompt)
+                } else {
+                    lens
+                }
+            }
+        }
+    }
+
+    suspend fun saveCustomLens(lens: com.aidict.app.utils.QuickLlmLens, profileId: Int) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val customLensesJson = getProfileSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES") ?: ""
+            val existing = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson).toMutableList()
+            val index = existing.indexOfFirst { it.id == lens.id }
+            if (index >= 0) {
+                existing[index] = lens
+            } else {
+                existing.add(lens)
+            }
+            val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(existing)
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES", newJson))
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+        }
+    }
+
+    suspend fun deleteCustomLens(lensId: String, profileId: Int) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val customLensesJson = getProfileSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES") ?: ""
+            val existing = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson).toMutableList()
+            existing.removeAll { it.id == lensId }
+            val newJson = com.aidict.app.utils.DefaultPrompts.serializeCustomLenses(existing)
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_CUSTOM_LENSES", newJson))
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_CUSTOM_LENSES", newJson))
+        }
+    }
+
+    suspend fun saveLensPrompt(lensId: String, prompt: String, profileId: Int) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val key = "SIMPLE_LLM_PROMPT_${lensId.uppercase()}"
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_$key", prompt))
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting(key, prompt))
+        }
+    }
+
+    suspend fun resetLensPrompt(lensId: String, profileId: Int) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val key = "SIMPLE_LLM_PROMPT_${lensId.uppercase()}"
+            database.appDao().deleteSetting("PROFILE_${profileId}_$key")
+            database.appDao().deleteSetting(key)
+        }
+    }
+
+    suspend fun saveQuickLlmModel(model: String, profileId: Int) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val clean = model.trim().ifBlank { "inclusionai/ling-3.0-flash" }
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("PROFILE_${profileId}_SIMPLE_LLM_MODEL", clean))
+            database.appDao().insertSetting(com.aidict.app.data.entities.AppSetting("SIMPLE_LLM_MODEL", clean))
         }
     }
 
@@ -469,17 +559,23 @@ class SearchViewModel(
                 _correctState.value = SearchState()
                 correctInput = ""
             }
+            "quick_llm", "quickllm", "quick" -> {
+                _quickLlmState.value = SearchState()
+                quickLlmInput = ""
+            }
             else -> {
                 _dictState.value = SearchState()
                 _compareState.value = SearchState()
                 _translateState.value = SearchState()
                 _explainState.value = SearchState()
                 _correctState.value = SearchState()
+                _quickLlmState.value = SearchState()
                 searchInput = ""
                 translateInput = ""
                 compareInput = ""
                 explainInput = ""
                 correctInput = ""
+                quickLlmInput = ""
             }
         }
         clearSuggestions()
@@ -1179,6 +1275,128 @@ class SearchViewModel(
         }
     }
 
+    fun streamQuickLlm(
+        text: String,
+        source: String,
+        target: String,
+        lensKey: String = "quick_glance",
+        profileId: Int = 1
+    ) {
+        val cleanText = text.trim()
+        if (cleanText.isBlank()) return
+        clearSuggestions()
+        val _uiState = _quickLlmState
+        bgScope.launch {
+            try {
+                withContext(Dispatchers.Main) {
+                    _uiState.value = SearchState(isLoading = true, error = null, currentStream = "")
+                }
+                notifyBackgroundStatus("Quick LLM: $cleanText")
+
+                var contentAccumulator = ""
+                llmRepository.streamQuickLlm(
+                    text = cleanText,
+                    sourceLang = source,
+                    targetLang = target,
+                    promptKey = lensKey,
+                    profileId = profileId
+                ).collect { chunk ->
+                    contentAccumulator += chunk
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(currentStream = contentAccumulator)
+                    }
+                }
+
+                // Ephemeral lookup by default (word = null) with conversation history ready
+                withContext(Dispatchers.Main) {
+                    _uiState.value = SearchState(
+                        isLoading = false,
+                        word = null,
+                        currentStream = contentAccumulator,
+                        chatMessages = listOf(
+                            ChatMessage(wordId = 0, role = "user", content = cleanText),
+                            ChatMessage(wordId = 0, role = "assistant", content = contentAccumulator)
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                val errorDetail = e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Quick LLM error (${e.javaClass.simpleName})"
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = errorDetail
+                    )
+                }
+            } finally {
+                notifyBackgroundStatus()
+            }
+        }
+    }
+
+    fun saveQuickLlmToWord(
+        text: String,
+        content: String,
+        lensKey: String = "quick_glance",
+        sourceLang: String = "Auto Detect",
+        targetLang: String = "English",
+        profileId: Int = 1,
+        onSaved: (Word) -> Unit = {}
+    ) {
+        val cleanText = text.trim()
+        if (cleanText.isBlank() || content.isBlank()) return
+        bgScope.launch {
+            try {
+                val sessionId = getOrCreateActiveSessionId(profileId)
+                val langKey = "$sourceLang -> $targetLang"
+                val newWord = Word(
+                    profileId = profileId,
+                    term = cleanText,
+                    language = langKey,
+                    lemma = lensKey,
+                    sessionId = sessionId,
+                    mode = "quick_llm"
+                )
+                val wordId = database.appDao().insertWord(newWord).toInt()
+                val userMsg = ChatMessage(wordId = wordId, role = "user", content = cleanText)
+                val assistantMsg = ChatMessage(wordId = wordId, role = "assistant", content = content)
+                database.appDao().insertChatMessage(userMsg)
+                database.appDao().insertChatMessage(assistantMsg)
+                val insertedWord = database.appDao().getWord(wordId)
+                withContext(Dispatchers.Main) {
+                    if (insertedWord != null) {
+                        _quickLlmState.value = _quickLlmState.value.copy(word = insertedWord)
+                        onSaved(insertedWord)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SearchViewModel", "Failed to save Quick LLM result", e)
+            }
+        }
+    }
+
+    fun sendQuickLlmFollowUp(
+        content: String,
+        sourceLang: String = "Auto Detect",
+        targetLang: String = "English",
+        lensKey: String = "quick_glance",
+        profileId: Int = 1
+    ) {
+        val cleanContent = content.trim()
+        if (cleanContent.isBlank()) return
+        val currentWord = _quickLlmState.value.word
+        if (currentWord != null) {
+            sendFollowUpMessage(cleanContent, "quick_llm")
+        } else {
+            val baseTerm = _quickLlmInput.value.ifBlank {
+                _quickLlmState.value.chatMessages.firstOrNull { it.role == "user" }?.content ?: "Quick Note"
+            }
+            val baseContent = _quickLlmState.value.chatMessages.firstOrNull { it.role == "assistant" }?.content ?: ""
+            saveQuickLlmToWord(baseTerm, baseContent, lensKey, sourceLang, targetLang, profileId) { _ ->
+                sendFollowUpMessage(cleanContent, "quick_llm")
+            }
+        }
+    }
+
     fun moveWordToModeAndRegenerate(word: com.aidict.app.data.entities.Word, targetMode: String) {
         val cleanMode = targetMode.lowercase()
         bgScope.launch {
@@ -1233,6 +1451,12 @@ class SearchViewModel(
                         val isCorrectionOnly = correctType == "correction_only"
                         streamCorrect(word.term, sourceLang, targetLang, profileId, isCorrectionOnly)
                     }
+                }
+                "quick_llm", "quickllm", "quick" -> {
+                    val sourceLang = getProfileSetting(profileId, "SEARCH_SOURCE") ?: "Auto Detect"
+                    val targetLang = getProfileSetting(profileId, "SEARCH_TARGET") ?: "English"
+                    val defaultLens = getProfileSetting(profileId, "SIMPLE_LLM_DEFAULT_PROMPT") ?: "quick_glance"
+                    streamQuickLlm(word.term, sourceLang, targetLang, defaultLens, profileId)
                 }
             }
         }

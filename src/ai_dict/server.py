@@ -3271,6 +3271,16 @@ class MoveSessionReq(BaseModel):
     target_profile_id: int
     source_profile_id: Optional[int] = None
 
+class MoveDateItem(BaseModel):
+    id: int
+    mode: str
+
+class MoveDateRequest(BaseModel):
+    target_profile_id: int
+    source_profile_id: Optional[int] = None
+    date_label: Optional[str] = None
+    items: List[MoveDateItem]
+
 class MoveSessionPathReq(BaseModel):
     target_profile_id: int
     source_profile_id: Optional[int] = None
@@ -3369,6 +3379,68 @@ def move_session_by_path(session_id: str, req: MoveSessionPathReq, session: Sess
         MoveSessionReq(session_id=session_id, target_profile_id=req.target_profile_id, source_profile_id=req.source_profile_id),
         session
     )
+
+@app.post("/api/dates/move")
+def move_date_items(req: MoveDateRequest, session: Session = Depends(get_session)):
+    target_profile = session.get(Profile, req.target_profile_id)
+    if not target_profile:
+        raise HTTPException(status_code=404, detail="Target profile not found")
+        
+    count = 0
+    for it in req.items:
+        mode = it.mode.lower().strip()
+        item_id = it.id
+        if mode in ("word", "search"):
+            item = session.get(Word, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+        elif mode in ("comparison", "compare"):
+            item = session.get(Comparison, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+        elif mode == "explain":
+            item = session.get(Explain, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+        elif mode in ("translation", "translate"):
+            item = session.get(Translation, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+        elif mode in ("correction", "correct"):
+            item = session.get(Correction, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+        elif mode == "llm":
+            item = session.get(LlmRecord, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+        elif mode == "mt":
+            item = session.get(MtRecord, item_id)
+            if item and (req.source_profile_id is None or item.profile_id == req.source_profile_id):
+                item.profile_id = req.target_profile_id
+                session.add(item)
+                count += 1
+                
+    session.commit()
+    return {
+        "status": "ok",
+        "moved_items": count,
+        "date_label": req.date_label,
+        "target_profile_id": req.target_profile_id,
+        "target_profile_name": target_profile.name
+    }
 
 def do_rename_session(session_id: str, new_name: str, profile_id: Optional[int], session: Session):
     new_name = new_name.strip()

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Palette, Edit, Trash2, ExternalLink, ChevronDown, ChevronRight, RotateCcw, Save, Sparkles, User } from 'lucide-react'
+import { Palette, Edit, Trash2, ExternalLink, ChevronDown, ChevronRight, RotateCcw, Save, Sparkles, User, Zap, Plus } from 'lucide-react'
 
 // Collapsible section component
 function Section({ title, subtitle, children, defaultOpen = true }) {
@@ -230,13 +230,173 @@ export default function SettingsTab({
   const [ollamaStatus, setOllamaStatus] = useState({ running: false, models: [], activeModel: '', loading: false })
   const [mtStatus, setMtStatus] = useState({ active_level: 'standard', extension_default: true, models: {}, ollama_ready: false, loading: false })
   const [simpleLlmPrompts, setSimpleLlmPrompts] = useState([])
+  const [selectedLensId, setSelectedLensId] = useState('')
+  const [lensFormData, setLensFormData] = useState({ id: '', name: '', icon: '⚡', description: '', prompt: '' })
+  const [savingLens, setSavingLens] = useState(false)
+  const [lensFeedback, setLensFeedback] = useState('')
+  const [isCreatingLens, setIsCreatingLens] = useState(false)
+
+  const fetchSimpleLlmPrompts = async () => {
+    try {
+      const res = await fetch('/api/simple-llm/prompts')
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          setSimpleLlmPrompts(data)
+        }
+      }
+    } catch {}
+  }
 
   useEffect(() => {
-    fetch('/api/simple-llm/prompts')
-      .then(r => r.ok ? r.json() : [])
-      .then(data => { if (Array.isArray(data) && data.length > 0) setSimpleLlmPrompts(data) })
-      .catch(() => {})
+    fetchSimpleLlmPrompts()
   }, [])
+
+  useEffect(() => {
+    if (simpleLlmPrompts.length > 0 && !isCreatingLens) {
+      const current = simpleLlmPrompts.find(p => p.id === selectedLensId) || simpleLlmPrompts[0]
+      if (current) {
+        setSelectedLensId(current.id)
+        setLensFormData({
+          id: current.id,
+          name: current.name || '',
+          icon: current.icon || '⚡',
+          description: current.description || '',
+          prompt: current.prompt || ''
+        })
+      }
+    }
+  }, [simpleLlmPrompts, selectedLensId, isCreatingLens])
+
+  const handleSelectLensToEdit = (lensId) => {
+    setIsCreatingLens(false)
+    setSelectedLensId(lensId)
+    const found = simpleLlmPrompts.find(p => p.id === lensId)
+    if (found) {
+      setLensFormData({
+        id: found.id,
+        name: found.name || '',
+        icon: found.icon || '⚡',
+        description: found.description || '',
+        prompt: found.prompt || ''
+      })
+    }
+    setLensFeedback('')
+  }
+
+  const handleStartCreateNewLens = () => {
+    setIsCreatingLens(true)
+    setSelectedLensId('')
+    setLensFormData({
+      id: '',
+      name: '',
+      icon: '💡',
+      description: '',
+      prompt: `You are an expert multilingual linguist providing specialized analysis.
+When given a word, phrase, sentence pattern, or expression:
+
+1. Always start with:
+* **Language**: <Language of the input term/sentence>
+* **Base form (lemma)**: <Base form, infinitive, or root>
+
+2. Specialized Insights:
+- Provide structured, high-yield insights directly aligned with this lens.
+- Highlight key distinctions, usage contexts, and common pitfalls.
+
+3. Example Usage:
+- 1-2 authentic example sentences illustrating this concept with translations in the Target Language.
+
+Keep explanations structured in Markdown bullet points, clear, and directly to the point.
+
+STRICT LANGUAGE ENFORCEMENT RULES:
+- Target Language: Write all definitions, explanations, breakdowns, and example translations strictly in the specified Target Language.
+- Source Language: Only the input term itself and direct example sentence quotes may appear in the source language.`
+    })
+    setLensFeedback('')
+  }
+
+  const handleSaveLensPrompt = async () => {
+    const name = lensFormData.name.trim()
+    const prompt = lensFormData.prompt.trim()
+    if (!name) {
+      alert('Lens name cannot be empty')
+      return
+    }
+    if (!prompt) {
+      alert('Prompt content cannot be empty')
+      return
+    }
+
+    setSavingLens(true)
+    try {
+      const res = await fetch('/api/simple-llm/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lensFormData)
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Failed to save lens')
+      }
+      const data = await res.json()
+      if (Array.isArray(data.prompts)) {
+        setSimpleLlmPrompts(data.prompts)
+      }
+      if (data.prompt_id) {
+        setSelectedLensId(data.prompt_id)
+      }
+      setIsCreatingLens(false)
+      setLensFeedback('✓ Lens prompt saved successfully!')
+      setTimeout(() => setLensFeedback(''), 3000)
+    } catch (e) {
+      alert('Error saving lens: ' + e.message)
+    } finally {
+      setSavingLens(false)
+    }
+  }
+
+  const handleDeleteLens = async (idToDelete) => {
+    if (!confirm('Are you sure you want to delete this analytical lens?')) return
+    setSavingLens(true)
+    try {
+      const res = await fetch(`/api/simple-llm/prompts/${idToDelete}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete lens')
+      const data = await res.json()
+      if (Array.isArray(data.prompts)) {
+        setSimpleLlmPrompts(data.prompts)
+        if (data.prompts.length > 0) {
+          setSelectedLensId(data.prompts[0].id)
+        }
+      }
+      setLensFeedback('✓ Lens deleted')
+      setTimeout(() => setLensFeedback(''), 3000)
+    } catch (e) {
+      alert('Error deleting lens: ' + e.message)
+    } finally {
+      setSavingLens(false)
+    }
+  }
+
+  const handleResetAllLenses = async () => {
+    if (!confirm('Reset all Quick LLM analytical lenses to factory defaults? Any custom lenses will be removed.')) return
+    setSavingLens(true)
+    try {
+      const res = await fetch('/api/simple-llm/prompts/reset', { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to reset lenses')
+      const data = await res.json()
+      if (Array.isArray(data.prompts)) {
+        setSimpleLlmPrompts(data.prompts)
+        setSelectedLensId(data.prompts[0]?.id || 'quick_glance')
+      }
+      setIsCreatingLens(false)
+      setLensFeedback('✓ All lenses reset to factory presets')
+      setTimeout(() => setLensFeedback(''), 3000)
+    } catch (e) {
+      alert('Error resetting lenses: ' + e.message)
+    } finally {
+      setSavingLens(false)
+    }
+  }
 
   const fetchOllamaStatus = async () => {
     setOllamaStatus(prev => ({ ...prev, loading: true }))
@@ -824,6 +984,179 @@ export default function SettingsTab({
             onCopyGlobal={() => setVal('CORRECTION_PROMPT', getInheritedVal('CORRECTION_PROMPT'))}
             profileName={profileName}
           />
+
+          {/* ── Quick LLM Analytical Lens Prompts ── */}
+          <div className="pt-5 border-t border-gray-200 dark:border-gray-700/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+                  <Zap size={16} className="text-amber-500 fill-amber-500/20" />
+                  <span>Quick LLM Analytical Lens Prompts</span>
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  View, customize, or add system prompts for each analytical lens used by Quick LLM (Ling Flash).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetAllLenses}
+                  disabled={savingLens}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-1 transition cursor-pointer"
+                  title="Reset all lenses to factory default presets"
+                >
+                  <RotateCcw size={12} />
+                  <span>Reset All Lenses</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartCreateNewLens}
+                  disabled={savingLens}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium flex items-center gap-1 transition shadow-xs cursor-pointer"
+                >
+                  <Plus size={13} />
+                  <span>+ Add Lens</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Lens selection pill tabs */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {simpleLlmPrompts.map(p => {
+                const isSelected = !isCreatingLens && selectedLensId === p.id
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleSelectLensToEdit(p.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-amber-500/15 border-amber-500/50 text-amber-900 dark:text-amber-200 font-semibold ring-1 ring-amber-500/40'
+                        : 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span>{p.icon || '⚡'}</span>
+                    <span>{p.name || p.id}</span>
+                  </button>
+                )
+              })}
+              {isCreatingLens && (
+                <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 border border-blue-400 text-blue-600 dark:text-blue-300 flex items-center gap-1">
+                  <span>✨ New Lens (Draft)</span>
+                </span>
+              )}
+            </div>
+
+            {/* Selected Lens Editor Form */}
+            <div className="p-4 rounded-xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700/70 space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Lens Icon (Emoji)
+                  </label>
+                  <input
+                    type="text"
+                    value={lensFormData.icon}
+                    onChange={e => setLensFormData(prev => ({ ...prev, icon: e.target.value }))}
+                    className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="⚡"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Lens Name
+                  </label>
+                  <input
+                    type="text"
+                    value={lensFormData.name}
+                    onChange={e => setLensFormData(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                    placeholder="e.g. Quick Glance, Nuance & Slang"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Short Description
+                </label>
+                <input
+                  type="text"
+                  value={lensFormData.description}
+                  onChange={e => setLensFormData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2 text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="e.g. Concise definition, IPA, translation, and practical example"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    System Prompt Instructions
+                  </label>
+                  <span className="text-[11px] text-gray-400 font-mono">
+                    Markdown instructions for LLM
+                  </span>
+                </div>
+                <textarea
+                  value={lensFormData.prompt}
+                  onChange={e => setLensFormData(prev => ({ ...prev, prompt: e.target.value }))}
+                  rows={8}
+                  className="w-full text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-2.5 font-mono text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500 resize-y leading-relaxed"
+                  placeholder="System prompt instructions..."
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveLensPrompt}
+                    disabled={savingLens}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold shadow-xs transition disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save size={13} />
+                    <span>{savingLens ? 'Saving...' : (isCreatingLens ? 'Create Lens' : 'Save Lens Prompt')}</span>
+                  </button>
+
+                  {isCreatingLens && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingLens(false)
+                        if (simpleLlmPrompts.length > 0) {
+                          handleSelectLensToEdit(simpleLlmPrompts[0].id)
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-medium transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  )}
+
+                  {!isCreatingLens && lensFormData.id && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteLens(lensFormData.id)}
+                      disabled={savingLens}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 text-xs font-medium transition cursor-pointer"
+                      title="Delete this lens"
+                    >
+                      <Trash2 size={12} />
+                      <span>Delete</span>
+                    </button>
+                  )}
+                </div>
+
+                {lensFeedback && (
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 animate-fade-in">
+                    {lensFeedback}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
         </Section>
 
         {/* ── LANGUAGES ── */}

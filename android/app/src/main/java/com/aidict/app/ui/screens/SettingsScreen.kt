@@ -945,6 +945,11 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
                     onSave = { viewModel.saveAiSetting("SIMPLE_LLM_DEFAULT_PROMPT", it) },
                     onReset = { viewModel.resetAiSetting("SIMPLE_LLM_DEFAULT_PROMPT") }
                 )
+                QuickLlmLensPromptsInspector(
+                    viewModel = viewModel,
+                    isProfileScope = aiConfig.selectedProfileId != null,
+                    selectedProfileId = aiConfig.selectedProfileId
+                )
             }
         }
 
@@ -1396,6 +1401,172 @@ fun QuickLlmDefaultLensSettingItem(
                         }
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QuickLlmLensPromptsInspector(
+    viewModel: com.aidict.app.ui.viewmodels.SettingsViewModel,
+    isProfileScope: Boolean,
+    selectedProfileId: Int?
+) {
+    val customLensesJson by viewModel.getSettingFlow("SIMPLE_LLM_CUSTOM_LENSES", "").collectAsState()
+    val customLenses = remember(customLensesJson) { com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson) }
+    val lenses = remember(customLenses) { (com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS.values + customLenses).distinctBy { it.id } }
+
+    var selectedLensKey by remember { mutableStateOf(lenses.firstOrNull()?.id ?: "quick_glance") }
+    val currentLens = lenses.find { it.id == selectedLensKey } ?: lenses.first()
+
+    val globalKey = "SIMPLE_LLM_PROMPT_${currentLens.id.uppercase()}"
+    val profileKey = if (selectedProfileId != null) "PROFILE_${selectedProfileId}_$globalKey" else globalKey
+
+    val savedPrompt by viewModel.getSettingFlow(if (isProfileScope) profileKey else globalKey, "").collectAsState()
+    val globalSavedPrompt by viewModel.getSettingFlow(globalKey, "").collectAsState()
+
+    val effectiveDefault = currentLens.prompt
+    val isCustom = savedPrompt.isNotBlank()
+    val displayText = if (isCustom) savedPrompt else if (isProfileScope && globalSavedPrompt.isNotBlank()) globalSavedPrompt else effectiveDefault
+
+    var promptInput by remember(selectedLensKey) { mutableStateOf(displayText) }
+    var isDirty by remember(selectedLensKey) { mutableStateOf(false) }
+    var saveSuccess by remember(selectedLensKey) { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(displayText) {
+        if (!isDirty && promptInput != displayText) {
+            promptInput = displayText
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Quick LLM Lens Prompt",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (isProfileScope) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        color = if (isCustom) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = if (isCustom) "Custom" else "Inherited",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isCustom) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            if (isCustom) {
+                TextButton(
+                    onClick = {
+                        viewModel.resetAiSetting(globalKey)
+                        isDirty = false
+                        promptInput = effectiveDefault
+                        saveSuccess = false
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Default.Restore, contentDescription = "Restore Default", modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (isProfileScope) "Inherit" else "Reset", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+
+        // Lens Selector Dropdown
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        ) {
+            OutlinedTextField(
+                value = "${currentLens.icon} ${currentLens.name}",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Select Lens to View/Edit") },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                lenses.forEach { lens ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text("${lens.icon} ${lens.name}", fontWeight = FontWeight.Bold)
+                                Text(lens.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            selectedLensKey = lens.id
+                            expanded = false
+                            isDirty = false
+                            saveSuccess = false
+                        }
+                    )
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = promptInput,
+            onValueChange = {
+                promptInput = it
+                isDirty = true
+                saveSuccess = false
+            },
+            label = {
+                Text(
+                    if (isProfileScope && !isCustom) "${currentLens.name} Prompt (Inherited from Global)"
+                    else "${currentLens.name} Prompt"
+                )
+            },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            minLines = 4,
+            maxLines = 12
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    viewModel.saveAiSetting(globalKey, promptInput)
+                    isDirty = false
+                    saveSuccess = true
+                },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.Check, contentDescription = "Save Prompt", modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Save Prompt", style = MaterialTheme.typography.labelMedium)
+            }
+
+            if (saveSuccess) {
+                Text(
+                    text = "✓ Saved successfully!",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

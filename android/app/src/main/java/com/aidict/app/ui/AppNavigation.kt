@@ -38,6 +38,7 @@ import com.aidict.app.ui.screens.SettingsScreen
 import com.aidict.app.ui.screens.TranslateScreen
 import com.aidict.app.ui.screens.NotesScreen
 import com.aidict.app.ui.screens.CorrectScreen
+import com.aidict.app.ui.screens.QuickLlmScreen
 import com.aidict.app.ui.viewmodels.HistoryViewModel
 import com.aidict.app.ui.viewmodels.SearchViewModel
 import com.aidict.app.ui.viewmodels.SettingsViewModel
@@ -54,6 +55,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Spellcheck
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.platform.LocalDensity
@@ -120,7 +122,7 @@ fun AppNavigation(
     }
 
     val coroutineScope = rememberCoroutineScope()
-    val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialMode, pageCount = { 5 })
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialMode, pageCount = { 6 })
     val currentMode = pagerState.targetPage
 
     LaunchedEffect(initialMode, navigationTrigger) {
@@ -139,6 +141,7 @@ fun AppNavigation(
         2 -> searchViewModel.translateState.collectAsState().value
         3 -> searchViewModel.explainState.collectAsState().value
         4 -> searchViewModel.correctState.collectAsState().value
+        5 -> searchViewModel.quickLlmState.collectAsState().value
         else -> searchViewModel.dictState.collectAsState().value
     }
 
@@ -157,6 +160,7 @@ fun AppNavigation(
                 2 -> "translate"
                 3 -> "explain"
                 4 -> "correct"
+                5 -> "quick_llm"
                 else -> "dict"
             }
             searchViewModel.clearCurrentSearch(currentModeStr)
@@ -191,6 +195,7 @@ fun AppNavigation(
         currentMode == 2 -> bgTranslate ?: bgUniversal
         currentMode == 3 -> bgExplain ?: bgUniversal
         currentMode == 4 -> bgCorrect ?: bgUniversal
+        currentMode == 5 -> bgUniversal
         else -> null
     }
 
@@ -222,7 +227,8 @@ fun AppNavigation(
         TabItem("Compare", Icons.AutoMirrored.Filled.CompareArrows),
         TabItem("Translate", Icons.Default.Translate),
         TabItem("Explain", Icons.Default.Description),
-        TabItem("Correct", Icons.Default.Spellcheck)
+        TabItem("Correct", Icons.Default.Spellcheck),
+        TabItem("Quick LLM", Icons.Default.Bolt)
     )
 
         val quoteMode by settingsViewModel.quoteMode.collectAsState()
@@ -345,7 +351,9 @@ fun AppNavigation(
                             ?: searchViewModel.explainState.collectAsState().value.word?.term 
                             ?: searchViewModel.compareState.collectAsState().value.word?.term
                             ?: searchViewModel.correctState.collectAsState().value.word?.term
-                            ?: searchViewModel.searchInput
+                            ?: searchViewModel.quickLlmState.collectAsState().value.word?.term
+                            ?: searchViewModel.searchInput.ifBlank { null }
+                            ?: searchViewModel.quickLlmInput.ifBlank { null }
 
                         ExternalDictButton(settingsViewModel, currentWord)
                                                 IconButton(onClick = { showManualDialog = true }) {
@@ -449,6 +457,7 @@ fun AppNavigation(
                                 "translate" -> 2
                                 "explain" -> 3
                                 "correct" -> 4
+                                "quick_llm", "quickllm", "quick" -> 5
                                 else -> 0
                             }
                             coroutineScope.launch { pagerState.scrollToPage(modeInt) }
@@ -593,6 +602,7 @@ fun AppNavigation(
                                 "translate" -> 2
                                 "explain" -> 3
                                 "correct" -> 4
+                                "quick_llm", "quickllm", "quick" -> 5
                                 else -> 0
                             }
                             coroutineScope.launch { pagerState.animateScrollToPage(pageIndex) }
@@ -608,6 +618,7 @@ fun AppNavigation(
                                 2 -> TranslateScreen(searchViewModel, pid, autoNewSearch = autoNewSearch, onToggleAutoNewSearch = toggleAutoNewSearch, enterToSend = enterToSend, onMoveToMode = onMoveWordToMode)
                                 3 -> ExplainScreen(searchViewModel, pid, autoNewSearch = autoNewSearch, onToggleAutoNewSearch = toggleAutoNewSearch, enterToSend = enterToSend, onMoveToMode = onMoveWordToMode)
                                 4 -> CorrectScreen(searchViewModel, pid, autoNewSearch = autoNewSearch, onToggleAutoNewSearch = toggleAutoNewSearch, enterToSend = enterToSend, onMoveToMode = onMoveWordToMode)
+                                5 -> QuickLlmScreen(searchViewModel, pid, enterToSend = enterToSend, onMoveToMode = onMoveWordToMode)
                             }
                         }
                         

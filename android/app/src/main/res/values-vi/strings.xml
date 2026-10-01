@@ -5,4 +5,8 @@
     <string name="history_title">Lịch sử</string>
     <string name="export_data">Xuất dữ liệu</string>
     <string name="import_data">Nhập dữ liệu</string>
+    <string name="ask_ai_dict">Tra với AI Dict</string>
+    <string name="translate_action">Dịch</string>
+    <string name="translate_with_ai">Dịch với AI</string>
+    <string name="quick_llm_action">Quick LLM</string>
 </resources>

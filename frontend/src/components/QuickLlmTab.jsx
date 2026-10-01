@@ -72,6 +72,7 @@ export default function QuickLlmTab({
     return localStorage.getItem('quick_llm_selected_prompt') || defaultPromptKey || 'quick_glance'
   })
   const [modelOverride, setModelOverride] = useState(defaultModel)
+  const [saveModelToast, setSaveModelToast] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
@@ -83,11 +84,34 @@ export default function QuickLlmTab({
 
   // Lens Manager Modal States
   const [showManageModal, setShowManageModal] = useState(false)
+  const [showPromptDrawer, setShowPromptDrawer] = useState(false)
   const [editingLens, setEditingLens] = useState(null) // null for list, object for add/edit
   const [lensForm, setLensForm] = useState({ id: '', name: '', icon: '💡', description: '', prompt: '' })
   const [lensActionLoading, setLensActionLoading] = useState(false)
 
   const textareaRef = useRef(null)
+
+  useEffect(() => {
+    if (defaultModel) {
+      setModelOverride(defaultModel)
+    }
+  }, [defaultModel])
+
+  const handleSaveModelAsDefault = async () => {
+    const cleanModel = (modelOverride || '').trim() || 'inclusionai/ling-3.0-flash'
+    try {
+      const key = profileId && profileId !== 1 ? `SIMPLE_LLM_MODEL_${profileId}` : 'SIMPLE_LLM_MODEL'
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value: cleanModel })
+      })
+      setSaveModelToast(true)
+      setTimeout(() => setSaveModelToast(false), 2500)
+    } catch (e) {
+      alert('Failed to save default model: ' + e.message)
+    }
+  }
 
   // Fetch lenses from backend
   const fetchLenses = async () => {
@@ -416,12 +440,33 @@ export default function QuickLlmTab({
 
         {/* Optional Model Config Drawer */}
         {showConfig && (
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-3 text-xs shadow-sm">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-3.5 text-xs shadow-sm">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex-1 w-full">
-                <label className="block font-semibold text-gray-800 dark:text-gray-200 mb-1">
-                  Model Identifier:
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-gray-800 dark:text-gray-200">
+                    Model Identifier:
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSaveModelAsDefault}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] shadow-xs transition cursor-pointer"
+                      title="Save this model as the default for this profile"
+                    >
+                      <Check className="w-3 h-3" />
+                      <span>{saveModelToast ? 'Saved as Default!' : 'Save as Default'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModelOverride('inclusionai/ling-3.0-flash')}
+                      className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-[11px] font-medium cursor-pointer"
+                      title="Reset to Ling Flash"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -430,20 +475,47 @@ export default function QuickLlmTab({
                     placeholder="inclusionai/ling-3.0-flash"
                     className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 px-3 py-1.5 text-xs text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500 font-mono"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setModelOverride('inclusionai/ling-3.0-flash')}
-                    className="px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs font-medium cursor-pointer"
-                    title="Reset to default Ling Flash model"
-                  >
-                    Reset
-                  </button>
                 </div>
               </div>
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400">
-              Default: <code className="text-gray-800 dark:text-gray-200">inclusionai/ling-3.0-flash</code>. You can specify any OpenRouter or Ollama model identifier.
-            </p>
+
+            {/* Quick Model Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+              <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Quick Presets:</span>
+              {[
+                { label: '⚡ Ling Flash', model: 'inclusionai/ling-3.0-flash' },
+                { label: '🔍 DeepSeek Flash', model: 'deepseek/deepseek-v4-flash-0731' },
+                { label: '♊ Gemini 2.5 Flash', model: 'google/gemini-2.5-flash' },
+              ].map(preset => (
+                <button
+                  key={preset.model}
+                  type="button"
+                  onClick={() => setModelOverride(preset.model)}
+                  className={`px-2 py-0.5 rounded-md text-[11px] border transition cursor-pointer ${
+                    modelOverride === preset.model
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-900 dark:text-amber-200 font-bold'
+                      : 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-700/60 text-[11px] text-gray-500 dark:text-gray-400">
+              <span>Quick LLM uses this model for ultra-low latency, ephemeral analytical lookups.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLens(null)
+                  setShowManageModal(true)
+                }}
+                className="text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+                <span>Manage & Customize Lenses →</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -470,6 +542,22 @@ export default function QuickLlmTab({
               >
                 <Star className="w-3.5 h-3.5 fill-amber-500/40" />
                 <span>{defaultToast ? '★ Saved Default!' : 'Set Default'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const cur = lenses.find(l => l.id === selectedPrompt) || lenses[0]
+                  if (cur) {
+                    handleOpenEditLens(cur)
+                    setShowManageModal(true)
+                  }
+                }}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200/70 dark:border-indigo-800/60 transition cursor-pointer"
+                title="Directly view and edit the system prompt for the currently active lens"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit Lens Prompt</span>
               </button>
 
               <button
@@ -516,6 +604,71 @@ export default function QuickLlmTab({
               )
             })}
           </div>
+
+          {/* Active Lens Prompt Quick Viewer & Drawer */}
+          {(() => {
+            const activePreset = lenses.find(l => l.id === selectedPrompt) || lenses[0]
+            if (!activePreset) return null
+            return (
+              <div className="rounded-xl border border-amber-200/70 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/20 text-xs overflow-hidden mt-2">
+                <div
+                  className="py-2 px-3 flex items-center justify-between cursor-pointer hover:bg-amber-100/40 dark:hover:bg-amber-900/30 transition select-none"
+                  onClick={() => setShowPromptDrawer(!showPromptDrawer)}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 shrink-0">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Active Lens Prompt:</span>
+                    </span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">
+                      {activePreset.icon} {activePreset.name}
+                    </span>
+                    <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden md:inline truncate max-w-sm">
+                      {activePreset.description || activePreset.prompt?.substring(0, 50) + '...'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleOpenEditLens(activePreset)
+                        setShowManageModal(true)
+                      }}
+                      className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:underline flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/60"
+                      title="Edit this lens prompt in modal"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Edit Prompt</span>
+                    </button>
+                    {showPromptDrawer ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+                  </div>
+                </div>
+
+                {showPromptDrawer && (
+                  <div className="p-3 border-t border-amber-200/60 dark:border-amber-900/40 bg-white/70 dark:bg-gray-900/70 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-gray-500">
+                      <span>Exact system prompt instructions sent to LLM for this lens:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleOpenEditLens(activePreset)
+                          setShowManageModal(true)
+                        }}
+                        className="text-amber-600 dark:text-amber-400 hover:underline font-semibold"
+                      >
+                        Customize / Edit Full Prompt
+                      </button>
+                    </div>
+                    <pre className="font-mono text-[11px] leading-relaxed text-gray-700 dark:text-gray-300 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/60 whitespace-pre-wrap select-text">
+                      {activePreset.prompt}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {/* Input Text Card */}

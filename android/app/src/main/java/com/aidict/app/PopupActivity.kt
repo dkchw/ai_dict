@@ -127,6 +127,7 @@ class PopupActivity : ComponentActivity() {
                 "translate" -> 2
                 "explain" -> 3
                 "correct" -> 4
+                "quick_llm", "quickllm", "quick" -> 5
                 else -> if (isMultiWordExplain) 3 else 0
             }
 
@@ -155,6 +156,14 @@ class PopupActivity : ComponentActivity() {
                             val sourceLang = searchViewModel.getProfileSetting(profileId, "TRANSLATE_SOURCE") ?: "Auto Detect"
                             val targetLang = searchViewModel.getProfileSetting(profileId, "TRANSLATE_TARGET") ?: "English"
                             searchViewModel.streamTranslation(text, sourceLang, targetLang, profileId)
+                        }
+                        "quick_llm", "quickllm", "quick" -> {
+                            searchViewModel.clearCurrentSearch("quick_llm")
+                            searchViewModel.quickLlmInput = text
+                            val sourceLang = searchViewModel.getProfileSetting(profileId, "QUICK_LLM_SOURCE") ?: "Auto Detect"
+                            val targetLang = searchViewModel.getProfileSetting(profileId, "QUICK_LLM_TARGET") ?: "English"
+                            val defaultLens = searchViewModel.getProfileSetting(profileId, "QUICK_LLM_DEFAULT_LENS") ?: "quick_glance"
+                            searchViewModel.streamQuickLlm(text, sourceLang, targetLang, defaultLens, profileId)
                         }
                         "dict" -> {
                             searchViewModel.clearCurrentSearch("dict")

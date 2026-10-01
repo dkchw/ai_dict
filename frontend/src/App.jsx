@@ -543,6 +543,7 @@ function App() {
   );
   const [activeSessionId, setActiveSessionId] = useState(() => localStorage.getItem('active_session_id') || '');
   const [moveSessionModal, setMoveSessionModal] = useState(null);
+  const [moveDateModal, setMoveDateModal] = useState(null);
   const [deleteSessionModal, setDeleteSessionModal] = useState(null);
   const [moveItemModal, setMoveItemModal] = useState(null);
   const [moveModeModal, setMoveModeModal] = useState(null);
@@ -1912,6 +1913,50 @@ function App() {
     return { words: w, comparisons: c, explains: e, translations: t, corrections: cr, llm: ll, mt: mt, total: w + c + e + t + cr + ll + mt };
   };
 
+  const getDateItems = (dateLabel) => {
+    const isMatchingDate = (item) => {
+      if (item.session_id) return false;
+      const d = new Date(item.updated_at || item.created_at || Date.now());
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      let key = d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+      if (d.toDateString() === today.toDateString()) key = 'Today';
+      else if (d.toDateString() === yesterday.toDateString()) key = 'Yesterday';
+      return key === dateLabel;
+    };
+
+    const w = words.filter(isMatchingDate);
+    const c = comparisons.filter(isMatchingDate);
+    const e = explains.filter(isMatchingDate);
+    const t = translations.filter(isMatchingDate);
+    const cr = corrections.filter(isMatchingDate);
+    const ll = llmRecords.filter(isMatchingDate);
+    const mt = mtRecords.filter(isMatchingDate);
+
+    const all = [
+      ...w.map(i => ({ id: i.id, mode: 'word', title: i.term })),
+      ...c.map(i => ({ id: i.id, mode: 'comparison', title: i.terms })),
+      ...e.map(i => ({ id: i.id, mode: 'explain', title: i.text })),
+      ...t.map(i => ({ id: i.id, mode: 'translation', title: i.text })),
+      ...cr.map(i => ({ id: i.id, mode: 'correction', title: i.text })),
+      ...ll.map(i => ({ id: i.id, mode: 'llm', title: i.text })),
+      ...mt.map(i => ({ id: i.id, mode: 'mt', title: i.text }))
+    ];
+
+    return {
+      words: w,
+      comparisons: c,
+      explains: e,
+      translations: t,
+      corrections: cr,
+      llm: ll,
+      mt: mt,
+      all,
+      total: all.length
+    };
+  };
+
   const getAllSessions = () => {
     const sessionNames = new Set();
     words.forEach(w => w.session_id && sessionNames.add(w.session_id));
@@ -2139,6 +2184,104 @@ function App() {
     } catch (err) {
       alert("Failed to move session: " + err.message);
       setMoveSessionModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const openMoveDateModal = (dateLabel, currentGroupItems = [], currentMode = 'word') => {
+    const stats = getDateItems(dateLabel);
+    const currentModeItems = (currentGroupItems || []).map(item => ({
+      id: item.id,
+      mode: currentMode || 'word',
+      title: item.term || item.terms || item.text || 'Item'
+    }));
+    const otherProfiles = profiles.filter(p => p.id !== activeProfileId);
+    const defaultTarget = otherProfiles.length > 0 ? otherProfiles[0].id : 'new';
+
+    setMoveDateModal({
+      dateLabel,
+      stats,
+      currentMode,
+      currentModeItems,
+      scope: 'all',
+      targetProfileId: defaultTarget,
+      newProfileName: '',
+      loading: false
+    });
+  };
+
+  const handleExecuteMoveDate = async () => {
+    if (!moveDateModal) return;
+    const { dateLabel, stats, currentModeItems, scope, targetProfileId, newProfileName } = moveDateModal;
+    
+    let finalTargetId = targetProfileId;
+    let finalTargetName = '';
+
+    setMoveDateModal(prev => ({ ...prev, loading: true }));
+
+    try {
+      if (targetProfileId === 'new') {
+        if (!newProfileName || !newProfileName.trim()) {
+          alert("Please enter a name for the new profile.");
+          setMoveDateModal(prev => ({ ...prev, loading: false }));
+          return;
+        }
+        const pRes = await fetch('/api/profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newProfileName.trim() })
+        });
+        if (!pRes.ok) throw new Error(await pRes.text());
+        const newP = await pRes.json();
+        finalTargetId = newP.id;
+        finalTargetName = newP.name;
+      } else {
+        const found = profiles.find(p => p.id === parseInt(targetProfileId));
+        finalTargetName = found ? found.name : `Profile #${targetProfileId}`;
+      }
+
+      const itemsToMove = scope === 'all' ? stats.all : currentModeItems;
+
+      if (!itemsToMove || itemsToMove.length === 0) {
+        alert("No items found to move.");
+        setMoveDateModal(null);
+        return;
+      }
+
+      const res = await fetch('/api/dates/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_profile_id: parseInt(finalTargetId),
+          source_profile_id: activeProfileId,
+          date_label: dateLabel,
+          items: itemsToMove.map(i => ({ id: i.id, mode: i.mode }))
+        })
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      await Promise.all([
+        fetchWords(),
+        fetchComparisons(),
+        fetchExplains(),
+        fetchTranslations(),
+        fetchCorrections(),
+        fetchLlmRecords(),
+        fetchMtRecords(),
+        fetchProfiles()
+      ]);
+
+      setMoveDateModal(null);
+
+      if (confirm(`Successfully moved ${data.moved_items} items from date "${dateLabel}" to "${finalTargetName}".\n\nWould you like to switch to "${finalTargetName}" now?`)) {
+        sessionStorage.setItem('activeProfileId', finalTargetId);
+        localStorage.setItem('activeProfileId', finalTargetId);
+        window.location.href = window.location.pathname;
+      }
+    } catch (err) {
+      alert("Failed to move date: " + err.message);
+      setMoveDateModal(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -2685,6 +2828,19 @@ function App() {
             >
               <FolderPlus size={13} />
               <span>{isDate ? 'Move Date to Session' : 'Move to Session'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                if (e) e.stopPropagation();
+                openMoveDateModal(group, groupItems, mode);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 transition-colors shadow-2xs cursor-pointer"
+              title={`Move entire date "${group}" to another profile`}
+            >
+              <ArrowRightLeft size={13} />
+              <span>{isDate ? 'Move Date to Profile' : 'Move to Profile'}</span>
             </button>
           </div>
         </div>
@@ -5163,9 +5319,7 @@ function App() {
                         <div className="space-y-6">
                           {Object.entries(getGroupedByDay(filteredMtRecords, 'text')).map(([day, items]) => (
                             <div key={day} className="space-y-3">
-                              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 px-1">
-                                {day}
-                              </h3>
+                              {renderGroupHeader(day, items, 'mt')}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {items.map(rec => (
                                   <div
@@ -5621,6 +5775,154 @@ function App() {
               >
                 {moveSessionModal.loading && <Loader2 size={16} className="animate-spin" />}
                 <span>Move Entire Session</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {typeof document !== 'undefined' && moveDateModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 border dark:border-gray-700 space-y-4">
+            <div className="flex items-center justify-between border-b dark:border-gray-700 pb-3">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                <ArrowRightLeft size={18} className="text-indigo-600 dark:text-indigo-400" />
+                Move Date to Profile
+              </h3>
+              <button 
+                onClick={() => setMoveDateModal(null)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-900/60 p-3 rounded-lg border dark:border-gray-700 space-y-2 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500 dark:text-gray-400 font-medium">Date Group:</span>
+                <span className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+                  <Calendar size={13} className="text-indigo-500" />
+                  {moveDateModal.dateLabel}
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t dark:border-gray-700/60 text-xs">
+                <label className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">Select Items to Move:</label>
+                <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${
+                  moveDateModal.scope === 'all'
+                    ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40'
+                    : 'border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-800/80'
+                }`}>
+                  <input
+                    type="radio"
+                    name="moveDateScope"
+                    checked={moveDateModal.scope === 'all'}
+                    onChange={() => setMoveDateModal(prev => ({ ...prev, scope: 'all' }))}
+                    className="mt-0.5 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-900 dark:text-gray-100">
+                      Entire Date (All Modes) &bull; {moveDateModal.stats.total} items
+                    </div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      {[
+                        moveDateModal.stats.words.length ? `${moveDateModal.stats.words.length} words` : null,
+                        moveDateModal.stats.comparisons.length ? `${moveDateModal.stats.comparisons.length} compares` : null,
+                        moveDateModal.stats.explains.length ? `${moveDateModal.stats.explains.length} explains` : null,
+                        moveDateModal.stats.translations.length ? `${moveDateModal.stats.translations.length} translations` : null,
+                        moveDateModal.stats.corrections.length ? `${moveDateModal.stats.corrections.length} corrections` : null,
+                        moveDateModal.stats.llm.length ? `${moveDateModal.stats.llm.length} Quick LLM` : null,
+                        moveDateModal.stats.mt.length ? `${moveDateModal.stats.mt.length} MT` : null,
+                      ].filter(Boolean).join(', ') || 'No items on this date'}
+                    </div>
+                  </div>
+                </label>
+
+                <label className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${
+                  moveDateModal.scope === 'current'
+                    ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40'
+                    : 'border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-800/80'
+                }`}>
+                  <input
+                    type="radio"
+                    name="moveDateScope"
+                    checked={moveDateModal.scope === 'current'}
+                    onChange={() => setMoveDateModal(prev => ({ ...prev, scope: 'current' }))}
+                    className="mt-0.5 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-900 dark:text-gray-100">
+                      Current Tab Only ({moveDateModal.currentMode}) &bull; {moveDateModal.currentModeItems.length} items
+                    </div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      Only items currently listed in this {moveDateModal.currentMode} view will be moved
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Select Destination Profile:
+              </label>
+              <select
+                value={moveDateModal.targetProfileId}
+                onChange={(e) => setMoveDateModal({ ...moveDateModal, targetProfileId: e.target.value })}
+                className="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+              >
+                {profiles.filter(p => p.id !== activeProfileId).map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} {p.is_default ? '(Default)' : ''}
+                  </option>
+                ))}
+                <option value="new">+ Create New Profile...</option>
+              </select>
+            </div>
+
+            {moveDateModal.targetProfileId === 'new' && (
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400">
+                  New Profile Name:
+                </label>
+                <input
+                  type="text"
+                  value={moveDateModal.newProfileName}
+                  onChange={(e) => setMoveDateModal({ ...moveDateModal, newProfileName: e.target.value })}
+                  placeholder="e.g. Spanish B2, Medical, Work..."
+                  className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded-lg p-2 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+            )}
+
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              All chosen entries, explanations, tags, bookmark colors, and AI chat histories for this date will be safely transferred to the selected profile.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2 border-t dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setMoveDateModal(null)}
+                disabled={moveDateModal.loading}
+                className="px-4 py-2 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteMoveDate}
+                disabled={
+                  moveDateModal.loading ||
+                  (moveDateModal.targetProfileId === 'new' && !moveDateModal.newProfileName.trim()) ||
+                  (moveDateModal.scope === 'all' ? moveDateModal.stats.total === 0 : moveDateModal.currentModeItems.length === 0)
+                }
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-xs"
+              >
+                {moveDateModal.loading && <Loader2 size={16} className="animate-spin" />}
+                <span>
+                  Move {moveDateModal.scope === 'all' ? moveDateModal.stats.total : moveDateModal.currentModeItems.length} Items
+                </span>
               </button>
             </div>
           </div>

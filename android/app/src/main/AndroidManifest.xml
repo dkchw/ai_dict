@@ -90,6 +90,38 @@
                 <data android:mimeType="text/*" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".AiTranslateActivity"
+            android:theme="@style/Theme.AIDict.Transparent"
+            android:windowSoftInputMode="adjustPan"
+            android:exported="true"
+            android:taskAffinity=".AiTranslateTask"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:label="@string/translate_with_ai">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".QuickLlmActivity"
+            android:theme="@style/Theme.AIDict.Transparent"
+            android:windowSoftInputMode="adjustPan"
+            android:exported="true"
+            android:taskAffinity=".QuickLlmTask"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:label="@string/quick_llm_action">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+        </activity>
         <service
             android:name=".FloatingBubbleService"
             android:foregroundServiceType="specialUse|dataSync"

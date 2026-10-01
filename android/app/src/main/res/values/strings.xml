@@ -7,4 +7,6 @@
     <string name="import_data">Import Data</string>
     <string name="ask_ai_dict">Ask AI Dict</string>
     <string name="translate_action">Translate</string>
+    <string name="translate_with_ai">Translate with AI</string>
+    <string name="quick_llm_action">Quick LLM</string>
 </resources>

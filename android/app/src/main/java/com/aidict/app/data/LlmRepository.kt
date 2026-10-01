@@ -334,8 +334,20 @@ class LlmRepository(private val database: AppDatabase) {
         val basePrompt = if (!customPrompt.isNullOrBlank()) {
             customPrompt.trim()
         } else {
-            com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS[promptKey]?.prompt
-                ?: com.aidict.app.utils.DefaultPrompts.DEFAULT_SIMPLE_LLM_PROMPT
+            val keyPrompt = getProfileOrGlobalSetting(profileId, "SIMPLE_LLM_PROMPT_${promptKey.uppercase()}", "")
+            if (keyPrompt.isNotBlank()) {
+                keyPrompt
+            } else {
+                val presetPrompt = com.aidict.app.utils.DefaultPrompts.QUICK_LLM_PRESETS[promptKey]?.prompt
+                if (!presetPrompt.isNullOrBlank()) {
+                    presetPrompt
+                } else {
+                    val customLensesJson = getProfileOrGlobalSetting(profileId, "SIMPLE_LLM_CUSTOM_LENSES", "")
+                    val customLenses = com.aidict.app.utils.DefaultPrompts.parseCustomLenses(customLensesJson)
+                    customLenses.find { it.id == promptKey }?.prompt
+                        ?: com.aidict.app.utils.DefaultPrompts.DEFAULT_SIMPLE_LLM_PROMPT
+                }
+            }
         }
 
         val langConstraints = mutableListOf(

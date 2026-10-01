@@ -80,7 +80,7 @@ Both PC and Android implement the same pedagogical philosophy: **Production Over
 | **Text Explanation (`explain`)** | ✅ Full sentence breakdown & ellipsis pattern analysis | ✅ Card / Bubble text analysis | ✅ Dedicated screen & ellipsis pattern analysis | 100% Identical Prompt |
 | **Reverse Concept (`translate`)** | ✅ Expression exploration & nuance comparison | ✅ Toolbar popup concept lookup | ✅ Dedicated screen with source/target selection | 100% Identical Prompt |
 | **Text Correction (`correct`)** | ✅ Correction-Only vs Correction + Translation | ✅ Card / Bubble correction | ✅ Dedicated screen & MT tier selector | 100% Identical Prompt & Flow |
-| **Quick LLM / Lenses** | ✅ 6 Lenses (Quick Glance, Grammar, Nuance, ELI5, TL;DR, Dialogues) + custom lenses | ✅ Floating lens selector, instant prompt switching | ✅ Analytical presets in `DefaultPrompts.kt` & settings scoping | 100% Compatible Presets |
+| **Quick LLM / Lenses** | ✅ 6 Lenses (Quick Glance, Grammar, Nuance, ELI5, TL;DR, Dialogues) + custom lenses | ✅ Floating lens selector, instant prompt switching | ✅ Dedicated screen (QuickLlmScreen), 6 presets, zero-save ephemeral default with manual bookmarking | 100% Full Feature Parity |
 | **Offline Machine Translation** | ✅ Meta NLLB-200 (600M int8 via CTranslate2 CPU) | ✅ Sub-second card lookup (zero-memory default) | ✅ Google ML Kit on-device translation (~30MB/pack) | Intentional Architectural Divergence |
 | **Follow-Up Contextual Chat** | ✅ Infinite conversational turn retention per item | ✅ Interactive follow-up input in Shadow DOM card | ✅ Interactive follow-up input per Word item | 100% Identical Workflow |
 | **System-Wide Overlay** | ❌ (Confined to browser) | ✅ Shadow DOM card on all web pages & video subtitles | ✅ `SYSTEM_ALERT_WINDOW` Floating Bubble & `PROCESS_TEXT` | Platform-Native Implementation |
@@ -206,8 +206,11 @@ The PC and Android versions differ in four primary architectural areas. These di
 #### Android Mobile Implementation
 - **Mechanism:** Android System OS Services and Activity Intent Filters:
   1. **`FloatingBubbleService`:** Uses `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY` to float a round draggable bubble over all third-party apps (e.g. YouTube, Kindle, Twitter, Chrome).
-  2. **`PopupActivity`:** Registers for `android.intent.action.PROCESS_TEXT` and `android.intent.action.SEND`. When the user selects text anywhere in Android and taps the system text selection menu, AI Dict appears in a floating modal bottom-sheet.
-  3. **`TranslateActivity`:** Registers for `android.intent.action.TRANSLATE`, allowing AI Dict to act as the primary system translation provider.
+  2. **`PopupActivity` & Context Menu Activities:**
+     - **`PopupActivity`:** Handles `android.intent.action.PROCESS_TEXT` for "Ask AI Dict".
+     - **`AiTranslateActivity`:** Dedicated context menu entry "Translate with AI" (`@string/translate_with_ai`) directly opening AI Translation streaming mode.
+     - **`QuickLlmActivity`:** Dedicated context menu entry "Quick LLM" (`@string/quick_llm_action`) directly opening analytical lens analysis.
+  3. **`TranslateActivity`:** Registers for `android.intent.action.TRANSLATE`, allowing AI Dict to act as the primary offline system translation provider.
 - **Why it fits Mobile:** Mobile web browsers running on Android do not support desktop Chrome Extensions; native system intents and window manager overlays are the standard Android platform mechanism for system-wide text interception.
 
 ---
@@ -272,7 +275,18 @@ If you add an attribute to words or messages:
    - If changing Room schema, bump database version in `AppDatabase.kt` and provide a migration or `fallbackToDestructiveMigration()`.
    - Update `BackupHelper.kt` to ensure export/import JSON serializes the new field.
 
-### Protocol 4: Releasing & Verification
+### Protocol 4: Quick LLM & Analytical Lenses Configuration
+When modifying Quick LLM models, lenses, or prompt presets:
+1. **Update PC:**
+   - Modify default model and presets in `src/ai_dict/ai.py` (`SIMPLE_LLM_PROMPTS`).
+   - Support model overrides and lens management in `frontend/src/components/QuickLlmTab.jsx` and `SettingsTab.jsx`.
+   - Build frontend: `cd frontend && npm run build`.
+2. **Update Android:**
+   - Keep presets in sync in `android/app/src/main/java/com/aidict/app/utils/DefaultPrompts.kt` (`QUICK_LLM_PRESETS`, `parseCustomLenses`, `serializeCustomLenses`).
+   - Support model configuration, prompt customization, and custom lenses in `QuickLlmScreen.kt` and `SettingsScreen.kt`.
+   - Ensure fallback from profile settings to global settings in `SearchViewModel.kt` (`getProfileSetting`) and `LlmRepository.kt`.
+
+### Protocol 5: Releasing & Verification
 1. **Verify PC:**
    - `python3 -m py_compile src/ai_dict/*.py`
    - `cd frontend && npm run build`

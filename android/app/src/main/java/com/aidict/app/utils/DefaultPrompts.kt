@@ -428,4 +428,41 @@ STRICT LANGUAGE ENFORCEMENT RULES:
 - Source Language: Only the input term itself and direct example sentence quotes may appear in the source language."""
         )
     )
+
+    fun parseCustomLenses(jsonStr: String?): List<QuickLlmLens> {
+        if (jsonStr.isNullOrBlank()) return emptyList()
+        val list = mutableListOf<QuickLlmLens>()
+        try {
+            val arr = org.json.JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val id = obj.optString("id")
+                val name = obj.optString("name")
+                val icon = obj.optString("icon", "💡")
+                val description = obj.optString("description", "")
+                val prompt = obj.optString("prompt", "")
+                if (id.isNotBlank() && name.isNotBlank() && prompt.isNotBlank()) {
+                    list.add(QuickLlmLens(id, name, icon, description, prompt))
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DefaultPrompts", "Failed to parse custom lenses", e)
+        }
+        return list
+    }
+
+    fun serializeCustomLenses(lenses: List<QuickLlmLens>): String {
+        val arr = org.json.JSONArray()
+        for (lens in lenses) {
+            val obj = org.json.JSONObject().apply {
+                put("id", lens.id)
+                put("name", lens.name)
+                put("icon", lens.icon)
+                put("description", lens.description)
+                put("prompt", lens.prompt)
+            }
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
 }

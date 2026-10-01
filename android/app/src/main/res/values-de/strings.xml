@@ -5,4 +5,8 @@
     <string name="history_title">Verlauf</string>
     <string name="export_data">Daten exportieren</string>
     <string name="import_data">Daten importieren</string>
+    <string name="ask_ai_dict">Mit AI Dict nachschlagen</string>
+    <string name="translate_action">Übersetzen</string>
+    <string name="translate_with_ai">Mit AI übersetzen</string>
+    <string name="quick_llm_action">Quick LLM</string>
 </resources>
