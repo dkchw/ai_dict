@@ -224,49 +224,178 @@ def load_ct2_engine(repo_id: str):
     return translator, tok
 
 
+# Common abbreviations to avoid false sentence boundary splits
+ABBREVIATIONS = {
+    'mr.', 'mrs.', 'ms.', 'dr.', 'prof.', 'sr.', 'jr.', 'vs.', 'etc.',
+    'e.g.', 'i.e.', 'al.', 'fig.', 'dept.', 'approx.', 'st.', 'no.',
+    'jan.', 'feb.', 'mar.', 'apr.', 'jun.', 'jul.', 'aug.', 'sep.', 'sept.', 'oct.', 'nov.', 'dec.',
+    'u.s.', 'u.k.', 'e.u.', 'a.m.', 'p.m.'
+}
+
+
+def split_into_sentence_chunks(text: str, max_chars_per_chunk: int = 400) -> list[str]:
+    """
+    Splits text into high-fidelity sentence or sub-sentence chunks for seq2seq MT models.
+    Prevents attention degradation, truncation, or omission in models like NLLB-200.
+    Preserves abbreviations, initials, decimals, and punctuation across 200+ languages.
+    """
+    clean = text.strip()
+    if not clean:
+        return []
+
+    # Regex pattern: match sentence ending punctuation followed by closing quotes/brackets and whitespace/end-of-line,
+    # or CJK / Arabic / Devanagari full stops and question marks.
+    pattern = r'([.!?…]+["\'\)\]]*(?:\s+|$)|[。！？।॥۔]+["\'\)\]]*\s*)'
+    parts = re.split(pattern, clean)
+
+    sentences = []
+    current = ""
+
+    for i in range(0, len(parts) - 1, 2):
+        chunk = parts[i]
+        delim = parts[i + 1]
+
+        words = chunk.rstrip().split()
+        clean_word = (words[-1].lower() + ".") if words and not words[-1].endswith(".") else (words[-1].lower() if words else "")
+        is_abbrev = clean_word in ABBREVIATIONS or (words and words[-1].lower() in ABBREVIATIONS)
+        is_initial = bool(words and re.match(r'^[a-zA-Z]\.?$', words[-1]) and len(words[-1]) <= 2)
+        is_num = bool(words and re.match(r'^\d+$', words[-1]) and delim.startswith(".") and i + 2 < len(parts) and re.match(r'^\d+', parts[i+2]))
+
+        if is_abbrev or is_initial or is_num:
+            current += chunk + delim
+        else:
+            current += chunk + delim
+            if current.strip():
+                sentences.append(current.strip())
+            current = ""
+
+    if len(parts) % 2 == 1 and parts[-1]:
+        current += parts[-1]
+    if current.strip():
+        sentences.append(current.strip())
+
+    # Further break down any sentences that exceed max_chars_per_chunk
+    final_chunks = []
+    for s in sentences:
+        if len(s) <= max_chars_per_chunk:
+            final_chunks.append(s)
+        else:
+            # Split on secondary punctuation (; , : - ) or space
+            sub_parts = re.split(r'([;:,—–]\s+)', s)
+            sub_buf = ""
+            for j in range(0, len(sub_parts) - 1, 2):
+                piece = sub_parts[j] + sub_parts[j+1]
+                if len(sub_buf) + len(piece) > max_chars_per_chunk and sub_buf:
+                    final_chunks.append(sub_buf.strip())
+                    sub_buf = piece
+                else:
+                    sub_buf += piece
+            if len(sub_parts) % 2 == 1:
+                sub_buf += sub_parts[-1]
+            if sub_buf.strip():
+                if len(sub_buf) > max_chars_per_chunk:
+                    words = sub_buf.split()
+                    if len(words) > 1:
+                        w_buf = []
+                        w_len = 0
+                        for w in words:
+                            if w_len + len(w) + 1 > max_chars_per_chunk and w_buf:
+                                final_chunks.append(" ".join(w_buf))
+                                w_buf = [w]
+                                w_len = len(w)
+                            else:
+                                w_buf.append(w)
+                                w_len += len(w) + 1
+                        if w_buf:
+                            final_chunks.append(" ".join(w_buf))
+                    else:
+                        for k in range(0, len(sub_buf), max_chars_per_chunk):
+                            final_chunks.append(sub_buf[k:k+max_chars_per_chunk])
+                else:
+                    final_chunks.append(sub_buf.strip())
+
+    return final_chunks
+
+
 def translate_with_ct2(text: str, src_lang: str, tgt_lang: str, repo_id: str) -> str:
-    """Synchronous inference using CTranslate2 and Tokenizer."""
+    """
+    Synchronous inference using CTranslate2 and Tokenizer.
+    Performs sentence-level chunking and batch translation across paragraphs,
+    preserving all indentation, list bullets, blank lines, and formatting while
+    ensuring 100% of long text (>5000 chars) is translated without truncation.
+    """
     translator, tok = load_ct2_engine(repo_id)
 
-    # Split into lines/paragraphs to preserve formatting
+    # Split into lines to preserve document structure and paragraph breaks
     lines = text.split("\n")
-    translated_lines = []
+    line_records = []
+    all_chunks = []
 
     for line in lines:
         if not line.strip():
-            translated_lines.append("")
-            continue
+            line_records.append({"is_empty": True, "original": line, "num_chunks": 0, "indent": ""})
+        else:
+            indent_len = len(line) - len(line.lstrip())
+            indent = line[:indent_len]
+            content = line.strip()
+            chunks = split_into_sentence_chunks(content)
+            line_records.append({"is_empty": False, "original": line, "num_chunks": len(chunks), "indent": indent})
+            all_chunks.extend(chunks)
 
-        enc = tok.encode(line, add_special_tokens=False)
-        source_tokens = [src_lang] + enc.tokens + ["</s>"]
-        target_prefix = [[tgt_lang]]
+    if not all_chunks:
+        return text
 
-        results = translator.translate_batch(
-            [source_tokens],
-            target_prefix=target_prefix,
+    # Tokenize all chunks with target language prefix and source tokens
+    batch_tokens = []
+    for chunk in all_chunks:
+        enc = tok.encode(chunk, add_special_tokens=False)
+        batch_tokens.append([src_lang] + enc.tokens + ["</s>"])
+
+    # Batch translate across chunks in parallel batches
+    BATCH_SIZE = 32
+    translated_chunks = []
+    for i in range(0, len(batch_tokens), BATCH_SIZE):
+        sub_batch = batch_tokens[i:i + BATCH_SIZE]
+        target_prefixes = [[tgt_lang]] * len(sub_batch)
+        batch_results = translator.translate_batch(
+            sub_batch,
+            target_prefix=target_prefixes,
             beam_size=2,
             max_batch_size=32,
             max_decoding_length=512
         )
+        for res in batch_results:
+            output_tokens = res.hypotheses[0]
+            filtered = [t for t in output_tokens if t not in (tgt_lang, "</s>", "<unk>")]
+            ids = [tok.token_to_id(t) for t in filtered if tok.token_to_id(t) is not None]
+            translated_chunks.append(tok.decode(ids).strip())
 
-        output_tokens = results[0].hypotheses[0]
-        # Filter target language and special tokens
-        filtered = [t for t in output_tokens if t not in (tgt_lang, "</s>", "<unk>")]
-        ids = [tok.token_to_id(t) for t in filtered if tok.token_to_id(t) is not None]
-        translated_text = tok.decode(ids)
-        translated_lines.append(translated_text)
+    # Reassemble translated lines preserving paragraph structure
+    chunk_idx = 0
+    translated_lines = []
+    is_cjk_target = tgt_lang in ("zho_Hans", "zho_Hant", "jpn_Jpan")
+    join_char = "" if is_cjk_target else " "
+
+    for record in line_records:
+        if record["is_empty"]:
+            translated_lines.append(record["original"])
+        else:
+            n = record["num_chunks"]
+            indent = record["indent"]
+            chunks_for_line = translated_chunks[chunk_idx:chunk_idx + n]
+            chunk_idx += n
+            translated_lines.append(indent + join_char.join(chunks_for_line))
 
     return "\n".join(translated_lines)
 
 
-async def translate_with_ollama(
+async def _translate_single_ollama(
     text: str,
     src_name: str,
     tgt_name: str,
     session: Session,
     profile_id: int = None
 ) -> str:
-    """Translates text via local Ollama instance as offline fallback or big level."""
     system_prompt = (
         "You are an expert, precise machine translation engine. "
         "Your task is to translate the source text directly and accurately. "
@@ -290,6 +419,37 @@ async def translate_with_ollama(
     # Strip any potential conversational prefixes or think blocks
     cleaned = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
     return cleaned
+
+
+async def translate_with_ollama(
+    text: str,
+    src_name: str,
+    tgt_name: str,
+    session: Session,
+    profile_id: int = None
+) -> str:
+    """Translates text via local Ollama instance with paragraph chunking for long text."""
+    if len(text) > 3000:
+        paragraphs = text.split("\n\n")
+        translated_paras = []
+        para_buf = []
+        buf_len = 0
+        for p in paragraphs:
+            if buf_len + len(p) > 2500 and para_buf:
+                sub_text = "\n\n".join(para_buf)
+                sub_res = await _translate_single_ollama(sub_text, src_name, tgt_name, session, profile_id)
+                translated_paras.append(sub_res)
+                para_buf = [p]
+                buf_len = len(p)
+            else:
+                para_buf.append(p)
+                buf_len += len(p) + 2
+        if para_buf:
+            sub_text = "\n\n".join(para_buf)
+            sub_res = await _translate_single_ollama(sub_text, src_name, tgt_name, session, profile_id)
+            translated_paras.append(sub_res)
+        return "\n\n".join(translated_paras)
+    return await _translate_single_ollama(text, src_name, tgt_name, session, profile_id)
 
 
 async def translate_text_mt(

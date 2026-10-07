@@ -557,7 +557,7 @@ export default function MtTab({
                 onKeyDown={handleKeyDown}
                 placeholder="Type or paste text to translate offline..."
                 className="w-full flex-1 resize-none bg-transparent outline-none text-base md:text-lg text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 leading-relaxed font-sans min-h-[200px]"
-                maxLength={5000}
+                maxLength={100000}
               />
 
               {/* Clear button in top-right */}
@@ -585,7 +585,7 @@ export default function MtTab({
                   />
                 )}
                 <span className="text-[11px] text-gray-400 font-mono">
-                  {inputText.length} / 5,000
+                  {inputText.length.toLocaleString()} / 100,000
                 </span>
               </div>
 

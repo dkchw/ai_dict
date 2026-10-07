@@ -148,7 +148,20 @@ object LocalTranslationEngine {
                 onDownloadingModel?.invoke(false)
                 refreshDownloadedModels()
 
-                val translated = translator.translate(trimmedText).await()
+                val translated = if (trimmedText.contains("\n") && trimmedText.length > 500) {
+                    val lines = trimmedText.split("\n")
+                    val resLines = mutableListOf<String>()
+                    for (line in lines) {
+                        if (line.isBlank()) {
+                            resLines.add("")
+                        } else {
+                            resLines.add(translator.translate(line.trim()).await())
+                        }
+                    }
+                    resLines.joinToString("\n")
+                } else {
+                    translator.translate(trimmedText).await()
+                }
 
                 Result.success(
                     TranslationResult(
