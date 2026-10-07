@@ -103,7 +103,21 @@ class MtTranslateRequest(BaseModel):
     level: Optional[str] = None
     profile_id: Optional[int] = 1
     session_id: Optional[str] = None
-    save_history: Optional[bool] = True
+    save_history: Optional[bool] = False
+
+class MtSaveRequest(BaseModel):
+    text: str
+    translated_text: str
+    source_lang: Optional[str] = "🌐 Auto"
+    target_lang: Optional[str] = "🇺🇸 EN"
+    detected_source: Optional[str] = None
+    level: Optional[str] = "standard"
+    model_name: Optional[str] = None
+    profile_id: Optional[int] = 1
+    session_id: Optional[str] = None
+    color: Optional[str] = None
+    stars: Optional[int] = 0
+    tag: Optional[str] = None
 
 class SimpleLlmLookupRequest(BaseModel):
     text: str
@@ -4084,7 +4098,7 @@ async def mt_translate_endpoint(req: MtTranslateRequest, session: Session = Depe
             profile_id=req.profile_id or 1
         )
 
-        save_hist = req.save_history is not False
+        save_hist = bool(req.save_history)
         record_dump = None
         if save_hist:
             pid = req.profile_id or 1
@@ -4136,6 +4150,66 @@ async def mt_translate_endpoint(req: MtTranslateRequest, session: Session = Depe
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/mt/save")
+def save_mt_record(req: MtSaveRequest, session: Session = Depends(get_session)):
+    clean_text = (req.text or "").strip()
+    if not clean_text:
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    pid = req.profile_id or 1
+    existing = session.exec(
+        select(MtRecord).where(
+            func.lower(MtRecord.text) == clean_text.lower(),
+            MtRecord.profile_id == pid,
+            MtRecord.target_lang == (req.target_lang or "🇺🇸 EN")
+        )
+    ).first()
+    if existing:
+        existing.search_count = (existing.search_count or 0) + 1
+        existing.view_count = (existing.view_count or 0) + 1
+        existing.translated_text = req.translated_text
+        if req.detected_source:
+            existing.detected_source = req.detected_source
+        if req.level:
+            existing.level = req.level
+        if req.model_name:
+            existing.model_name = req.model_name
+        if req.session_id:
+            existing.session_id = req.session_id
+        if req.color:
+            existing.color = req.color
+        if req.stars is not None:
+            existing.stars = req.stars
+        if req.tag:
+            existing.tag = req.tag
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing.model_dump()
+    else:
+        new_rec = MtRecord(
+            profile_id=pid,
+            text=clean_text,
+            translated_text=req.translated_text,
+            source_lang=req.source_lang or "🌐 Auto",
+            target_lang=req.target_lang or "🇺🇸 EN",
+            detected_source=req.detected_source,
+            level=req.level or "standard",
+            model_name=req.model_name or "NLLB-200",
+            session_id=req.session_id,
+            color=req.color,
+            stars=req.stars or 0,
+            tag=req.tag,
+            search_count=1,
+            view_count=1,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        session.add(new_rec)
+        session.commit()
+        session.refresh(new_rec)
+        return new_rec.model_dump()
 
 @app.get("/api/mt/status")
 def mt_status_endpoint(profile_id: int = 1, session: Session = Depends(get_session)):

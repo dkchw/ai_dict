@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { ArrowLeft, ArrowLeftRight, Copy, Check, Loader2, Sparkles, Zap, Trash2, X, RefreshCw, Eye, FolderPlus, Send, History, CheckCheck, Download, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Copy, Check, Loader2, Sparkles, Zap, Trash2, X, RefreshCw, Eye, FolderPlus, Send, History, CheckCheck, Download, AlertCircle, Bookmark, BookmarkCheck } from 'lucide-react';
 import { COLORS } from "./SearchTab";
 import SpeechButton from "./SpeechButton";
 import StarRating from "./StarRating";
@@ -72,8 +72,9 @@ export default function MtTab({
   const [modelStatus, setModelStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [autoTranslate, setAutoTranslate] = useState(() => localStorage.getItem('mt_auto_translate') !== 'false');
+  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('mt_auto_save') === 'true');
+  const [savingRecord, setSavingRecord] = useState(false);
 
   const inputRef = useRef(null);
   const debounceTimerRef = useRef(null);
@@ -150,7 +151,7 @@ export default function MtTab({
           level: modelLevel || level,
           profile_id: profileId,
           session_id: localStorage.getItem('active_session_id') || undefined,
-          save_history: true
+          save_history: autoSave
         })
       });
 
@@ -164,14 +165,51 @@ export default function MtTab({
       setDetectedSource(data.detected_source || null);
       if (data.record) {
         setCurrentRecord(data.record);
+      } else {
+        // If not auto-saving to DB, record remains unsaved until explicit save
+        setCurrentRecord(null);
       }
       lastTranslatedTextRef.current = text;
-      if (fetchMtRecords) fetchMtRecords();
+      if (data.record && fetchMtRecords) fetchMtRecords();
     } catch (err) {
       console.error(err);
       alert(err.message || 'Translation error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Explicitly save current translation to offline history
+  const handleSaveToHistory = async () => {
+    const text = inputText.trim();
+    const trans = translatedText.trim();
+    if (!text || !trans) return;
+
+    setSavingRecord(true);
+    try {
+      const res = await fetch('/api/mt/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: text,
+          translated_text: trans,
+          source_lang: mtSourceLang,
+          target_lang: mtTargetLang,
+          detected_source: detectedSource || undefined,
+          level: level,
+          profile_id: profileId,
+          session_id: localStorage.getItem('active_session_id') || undefined
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentRecord(data);
+        if (fetchMtRecords) fetchMtRecords();
+      }
+    } catch (e) {
+      console.error("Failed to save MT translation to history", e);
+    } finally {
+      setSavingRecord(false);
     }
   };
 
@@ -185,6 +223,10 @@ export default function MtTab({
       setCurrentRecord(null);
       lastTranslatedTextRef.current = '';
       return;
+    }
+
+    if (currentRecord && val.trim() !== currentRecord.text) {
+      setCurrentRecord(null);
     }
 
     if (autoTranslate) {
@@ -296,7 +338,36 @@ export default function MtTab({
 
   // Star rating update
   const handleUpdateStars = async (newStars) => {
-    if (!currentRecord?.id) return;
+    if (!currentRecord?.id) {
+      const text = inputText.trim();
+      const trans = translatedText.trim();
+      if (!text || !trans) return;
+      try {
+        const res = await fetch('/api/mt/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: text,
+            translated_text: trans,
+            source_lang: mtSourceLang,
+            target_lang: mtTargetLang,
+            detected_source: detectedSource || undefined,
+            level: level,
+            profile_id: profileId,
+            session_id: localStorage.getItem('active_session_id') || undefined,
+            stars: newStars
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentRecord(data);
+          if (fetchMtRecords) fetchMtRecords();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
     try {
       const res = await fetch(`/api/mt/records/${currentRecord.id}/stars`, {
         method: 'PATCH',
@@ -315,7 +386,36 @@ export default function MtTab({
 
   // Color tag update
   const handleUpdateColor = async (colorId) => {
-    if (!currentRecord?.id) return;
+    if (!currentRecord?.id) {
+      const text = inputText.trim();
+      const trans = translatedText.trim();
+      if (!text || !trans) return;
+      try {
+        const res = await fetch('/api/mt/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: text,
+            translated_text: trans,
+            source_lang: mtSourceLang,
+            target_lang: mtTargetLang,
+            detected_source: detectedSource || undefined,
+            level: level,
+            profile_id: profileId,
+            session_id: localStorage.getItem('active_session_id') || undefined,
+            color: colorId
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentRecord(data);
+          if (fetchMtRecords) fetchMtRecords();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
     try {
       const newColor = currentRecord.color === colorId ? null : colorId;
       const res = await fetch(`/api/mt/records/${currentRecord.id}/color`, {
@@ -604,6 +704,20 @@ export default function MtTab({
                   <span>Instant</span>
                 </label>
 
+                {/* Auto-save toggle (Default: Unsaved) */}
+                <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-gray-500 dark:text-gray-400 select-none mr-1" title="Automatically save translations to history (Default: off)">
+                  <input
+                    type="checkbox"
+                    checked={autoSave}
+                    onChange={(e) => {
+                      setAutoSave(e.target.checked);
+                      localStorage.setItem('mt_auto_save', e.target.checked);
+                    }}
+                    className="w-3.5 h-3.5 rounded text-amber-600 focus:ring-0 cursor-pointer"
+                  />
+                  <span>Auto-save</span>
+                </label>
+
                 {/* Translate action button */}
                 <button
                   type="button"
@@ -643,7 +757,7 @@ export default function MtTab({
             {/* Output Toolbar */}
             {(translatedText || inputText) && (
               <div className="flex items-center justify-between pt-3 border-t border-gray-200/60 dark:border-gray-800 text-xs">
-                {/* Left: Regenerate, Speech, Copy, Star rating */}
+                {/* Left: Regenerate, Save/Saved, Speech, Copy, Star rating */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
@@ -655,6 +769,27 @@ export default function MtTab({
                     <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
                     <span>Regenerate</span>
                   </button>
+
+                  {/* Save to History Button / Saved Status */}
+                  {translatedText && (
+                    currentRecord?.id ? (
+                      <span className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 rounded-lg border border-emerald-200/80 dark:border-emerald-800/80 select-none" title="Saved to offline history">
+                        <BookmarkCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+                        <span>Saved</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSaveToHistory}
+                        disabled={savingRecord || !translatedText.trim()}
+                        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg transition-colors cursor-pointer border border-amber-200/80 dark:border-amber-800/80 disabled:opacity-40"
+                        title="Save this translation to offline history"
+                      >
+                        {savingRecord ? <Loader2 size={13} className="animate-spin" /> : <Bookmark size={13} />}
+                        <span>Save to History</span>
+                      </button>
+                    )
+                  )}
 
                   {translatedText && (
                     <>
@@ -702,12 +837,44 @@ export default function MtTab({
                 {/* Right: Session, Send to Correction, Model badge */}
                 <div className="flex items-center gap-2">
                   {/* Move to Session button */}
-                  {currentRecord?.id && onAssignSession && (
+                  {onAssignSession && translatedText && (
                     <button
                       type="button"
-                      onClick={() => onAssignSession({ id: currentRecord.id, mode: 'mt', title: currentRecord.text, session_id: currentRecord.session_id })}
+                      onClick={async () => {
+                        if (!currentRecord?.id) {
+                          const text = inputText.trim();
+                          const trans = translatedText.trim();
+                          if (!text || !trans) return;
+                          try {
+                            const res = await fetch('/api/mt/save', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                text: text,
+                                translated_text: trans,
+                                source_lang: mtSourceLang,
+                                target_lang: mtTargetLang,
+                                detected_source: detectedSource || undefined,
+                                level: level,
+                                profile_id: profileId,
+                                session_id: localStorage.getItem('active_session_id') || undefined
+                              })
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setCurrentRecord(data);
+                              if (fetchMtRecords) fetchMtRecords();
+                              onAssignSession({ id: data.id, mode: 'mt', title: data.text, session_id: data.session_id });
+                            }
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        } else {
+                          onAssignSession({ id: currentRecord.id, mode: 'mt', title: currentRecord.text, session_id: currentRecord.session_id });
+                        }
+                      }}
                       className="p-1.5 text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors cursor-pointer"
-                      title={currentRecord.session_id ? `In session: "${currentRecord.session_id}" (Click to change)` : "Move to Session"}
+                      title={currentRecord?.session_id ? `In session: "${currentRecord.session_id}" (Click to change)` : "Move to Session"}
                     >
                       <FolderPlus size={15} />
                     </button>

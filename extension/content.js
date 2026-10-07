@@ -1348,15 +1348,19 @@
 
     if (explicitMode) {
       chosenMode = explicitMode;
-    } else if (/\b(vs\.?|versus)\b/i.test(cleanWord) || cleanWord.includes(';')) {
-      chosenMode = 'compare';
-    } else if (config.autoDetectSentence && (cleanWord.split(/\s+/).length > 3 || /[.!?]/.test(cleanWord))) {
-      chosenMode = isLlmActive ? 'explain' : 'machine_translation';
-    } else if (isCardOpen && cardEl && !cardEl.classList.contains('simple-mt-card')) {
-      // If Full LLM card is currently open and no explicit mode passed, STAY in LLM mode!
-      chosenMode = (currentMode && currentMode !== 'machine_translation') ? currentMode : ((config.defaultMode && config.defaultMode !== 'machine_translation') ? config.defaultMode : 'search');
+    } else if (!isLlmActive) {
+      // Machine Translation mode is strictly independent:
+      // NEVER auto-triggers compare or explain mode, regardless of symbols, commas, or semicolons in the text.
+      chosenMode = 'machine_translation';
     } else {
-      chosenMode = config.defaultMode || 'machine_translation';
+      // Full LLM mode: strictly independent. Never ever trigger compare mode from selected text!
+      // If less than 5 words -> search (word lookup); if 5 words or more -> explain.
+      const words = cleanWord.trim().split(/\s+/).filter(Boolean);
+      if (words.length < 5) {
+        chosenMode = 'search';
+      } else {
+        chosenMode = 'explain';
+      }
     }
 
     // Simple Machine Translate Mode (Google Translate style, zero memory)
