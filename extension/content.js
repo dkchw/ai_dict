@@ -410,8 +410,23 @@
           switchToFullFeatureMode(currentSelectionText, targetMode);
         } else if (targetMode === 'machine_translation' && !cardEl.classList.contains('simple-mt-card')) {
           switchToSimpleMtMode(currentSelectionText, lastSelectionRect);
+        } else if (!cardEl.classList.contains('simple-mt-card')) {
+          currentMode = targetMode;
+          const pills = cardEl.querySelectorAll('.mode-pill');
+          pills.forEach(p => p.classList.toggle('active', p.dataset.mode === currentMode));
+          const cardModeSelect = cardEl.querySelector('#ai-dict-card-search-mode-select');
+          if (cardModeSelect) cardModeSelect.value = currentMode;
+          syncSearchPlaceholder(currentMode);
+          syncCardLanguageRow();
         }
       }
+      if (sendResponse) sendResponse({ success: true });
+    } else if (req.action === 'SET_ACTIVE_PROFILE') {
+      config.activeProfileId = Number(req.profileId) || 1;
+      config.activeProfileName = req.profileName || `Profile ${config.activeProfileId}`;
+      cachedHistoryData = { search: null, explain: null, translation: null, compare: null, correction: null };
+      syncProfileUI();
+      fetchTemplatesSilently();
       if (sendResponse) sendResponse({ success: true });
     } else if (req.action === 'TOGGLE_CARD') {
       const sel = window.getSelection();
@@ -438,6 +453,13 @@
       if (key === 'persistentWindow') continue;
       config[key] = change.newValue;
     }
+    if (changes.activeProfileId || changes.activeProfileName) {
+      if (changes.activeProfileId) config.activeProfileId = Number(changes.activeProfileId.newValue) || 1;
+      if (changes.activeProfileName) config.activeProfileName = changes.activeProfileName.newValue;
+      cachedHistoryData = { search: null, explain: null, translation: null, compare: null, correction: null };
+      syncProfileUI();
+      fetchTemplatesSilently();
+    }
     if (changes.defaultMode) {
       const newDefault = changes.defaultMode.newValue;
       config.defaultMode = newDefault;
@@ -446,6 +468,14 @@
           switchToFullFeatureMode(currentSelectionText, newDefault);
         } else if (newDefault === 'machine_translation' && !cardEl.classList.contains('simple-mt-card')) {
           switchToSimpleMtMode(currentSelectionText, lastSelectionRect);
+        } else if (!cardEl.classList.contains('simple-mt-card')) {
+          currentMode = newDefault;
+          const pills = cardEl.querySelectorAll('.mode-pill');
+          pills.forEach(p => p.classList.toggle('active', p.dataset.mode === currentMode));
+          const cardModeSelect = cardEl.querySelector('#ai-dict-card-search-mode-select');
+          if (cardModeSelect) cardModeSelect.value = currentMode;
+          syncSearchPlaceholder(currentMode);
+          syncCardLanguageRow();
         }
       }
     }
@@ -461,15 +491,40 @@
     }
   });
 
+  function syncProfileUI() {
+    if (!cardEl) return;
+    const profileSelect = cardEl.querySelector('#ai-dict-profile-select');
+    if (profileSelect) {
+      if (profiles && profiles.length > 0) {
+        profileSelect.innerHTML = profiles.map(p => `
+          <option value="${p.id}" ${Number(p.id) === Number(config.activeProfileId) ? 'selected' : ''}>👤 ${p.name}</option>
+        `).join('');
+      }
+      profileSelect.value = String(config.activeProfileId);
+    }
+    const badge = cardEl.querySelector('#ai-dict-history-profile-badge');
+    if (badge) badge.textContent = config.activeProfileName || 'Profile';
+    const secBadge = cardEl.querySelector('.secondary-profile-badge');
+    if (secBadge) secBadge.textContent = config.activeProfileName || 'Profile';
+    const saveBtn = cardEl.querySelector('#ai-dict-simple-llm-save-btn');
+    if (saveBtn && !saveBtn.classList.contains('saved')) {
+      saveBtn.title = `Save this lookup to ${config.activeProfileName || 'Profile'}`;
+    }
+    if (isHistoryOpen) {
+      loadCardHistory(currentMode);
+    }
+  }
+
   async function fetchProfilesSilently() {
     try {
       const res = await callBackend('/api/profiles');
       if (Array.isArray(res)) {
         profiles = res;
-        const found = profiles.find(p => p.id === config.activeProfileId);
+        const found = profiles.find(p => Number(p.id) === Number(config.activeProfileId));
         if (found) {
           config.activeProfileName = found.name;
         }
+        syncProfileUI();
       }
     } catch (e) {}
   }
@@ -1348,18 +1403,28 @@
 
     if (explicitMode) {
       chosenMode = explicitMode;
-    } else if (!isLlmActive) {
+    } else if ((isCardOpen && currentMode === 'simple_llm') || config.defaultMode === 'simple_llm') {
+      // Quick LLM mode: strictly independent, lightweight, zero-save by default
+      chosenMode = 'simple_llm';
+    } else if (!isLlmActive || (isCardOpen && currentMode === 'machine_translation')) {
       // Machine Translation mode is strictly independent:
       // NEVER auto-triggers compare or explain mode, regardless of symbols, commas, or semicolons in the text.
       chosenMode = 'machine_translation';
     } else {
       // Full LLM mode: strictly independent. Never ever trigger compare mode from selected text!
-      // If less than 5 words -> search (word lookup); if 5 words or more -> explain.
-      const words = cleanWord.trim().split(/\s+/).filter(Boolean);
-      if (words.length < 5) {
-        chosenMode = 'search';
+      if (config.defaultMode === 'translation' || (isCardOpen && currentMode === 'translation')) {
+        chosenMode = 'translation';
+      } else if (config.defaultMode === 'correction' || (isCardOpen && currentMode === 'correction')) {
+        chosenMode = 'correction';
       } else {
-        chosenMode = 'explain';
+        // Full LLM Word Search vs Explain rule:
+        // If less than 5 words -> search (word lookup); if 5 words or more -> explain.
+        const words = cleanWord.trim().split(/\s+/).filter(Boolean);
+        if (words.length < 5) {
+          chosenMode = 'search';
+        } else {
+          chosenMode = 'explain';
+        }
       }
     }
 
@@ -1417,7 +1482,8 @@
           activeView: 'ai',
           externalUrl: '',
           externalName: '',
-          chatMessages: []
+          chatMessages: [],
+          promptKey: config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance'
         };
         cardTabs.push(newTab);
         activeCardTabId = newTab.id;
@@ -1443,10 +1509,15 @@
 
         const cardBody = cardEl.querySelector('#ai-dict-card-body');
         if (cardBody) {
+          const loadingMsg = chosenMode === 'simple_llm'
+            ? 'Analyzing with Quick LLM (Not saved)...'
+            : (chosenMode === 'machine_translation'
+            ? 'Translating offline...'
+            : `Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...`);
           cardBody.innerHTML = `
             <div class="loading-box">
               <div class="spinner"></div>
-              <div style="font-size:12px; font-weight:600;">Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...</div>
+              <div style="font-size:12px; font-weight:600;">${loadingMsg}</div>
               <div style="font-size:11px; opacity:0.6; margin-top:4px;">"${escapeHtml(cleanWord.length > 50 ? cleanWord.slice(0, 50) + '...' : cleanWord)}"</div>
             </div>
           `;
@@ -1481,7 +1552,8 @@
           activeView: 'ai',
           externalUrl: '',
           externalName: '',
-          chatMessages: []
+          chatMessages: [],
+          promptKey: config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance'
         };
         cardTabs = [targetTab];
         activeCardTabId = targetTab.id;
@@ -1497,6 +1569,9 @@
         targetTab.externalUrl = '';
         targetTab.externalName = '';
         targetTab.chatMessages = [];
+        if (chosenMode === 'simple_llm' && !targetTab.promptKey) {
+          targetTab.promptKey = config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance';
+        }
       }
 
       const pills = cardEl.querySelectorAll('.mode-pill');
@@ -1516,10 +1591,15 @@
 
       const cardBody = cardEl.querySelector('#ai-dict-card-body');
       if (cardBody) {
+        const loadingMsg = chosenMode === 'simple_llm'
+          ? 'Analyzing with Quick LLM (Not saved)...'
+          : (chosenMode === 'machine_translation'
+          ? 'Translating offline...'
+          : `Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...`);
         cardBody.innerHTML = `
           <div class="loading-box">
             <div class="spinner"></div>
-            <div style="font-size:12px; font-weight:600;">Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...</div>
+            <div style="font-size:12px; font-weight:600;">${loadingMsg}</div>
             <div style="font-size:11px; opacity:0.6; margin-top:4px;">"${escapeHtml(cleanWord.length > 50 ? cleanWord.slice(0, 50) + '...' : cleanWord)}"</div>
           </div>
         `;
@@ -1561,7 +1641,8 @@
       activeView: 'ai',
       externalUrl: '',
       externalName: '',
-      chatMessages: []
+      chatMessages: [],
+      promptKey: config.simpleLlmActivePrompt || config.simpleLlmDefaultPrompt || 'quick_glance'
     };
     cardTabs = [firstTab];
     activeCardTabId = firstTab.id;
@@ -2167,7 +2248,7 @@
 
   function renderCardSkeleton() {
     const profileOptions = profiles.length > 0 
-      ? profiles.map(p => `<option value="${p.id}" ${p.id === config.activeProfileId ? 'selected' : ''}>👤 ${p.name}</option>`).join('')
+      ? profiles.map(p => `<option value="${p.id}" ${Number(p.id) === Number(config.activeProfileId) ? 'selected' : ''}>👤 ${p.name}</option>`).join('')
       : `<option value="${config.activeProfileId}">👤 ${config.activeProfileName || 'Profile'}</option>`;
 
     cardEl.innerHTML = `
@@ -2390,7 +2471,7 @@
         <div class="card-body" id="ai-dict-card-body">
           <div class="loading-box">
             <div class="spinner"></div>
-            <div style="font-size:12px; font-weight:600;">Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...</div>
+            <div style="font-size:12px; font-weight:600;">${currentMode === 'simple_llm' ? 'Analyzing with Quick LLM (Not saved)...' : currentMode === 'machine_translation' ? 'Translating offline...' : `Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...`}</div>
           </div>
         </div>
 
@@ -2563,17 +2644,13 @@
     // Profile selector inside card header
     const profileSelect = cardEl.querySelector('#ai-dict-profile-select');
     profileSelect.addEventListener('change', (e) => {
-      const newId = parseInt(e.target.value);
+      const newId = parseInt(e.target.value) || 1;
       config.activeProfileId = newId;
-      const found = profiles.find(p => p.id === newId);
+      const found = profiles.find(p => Number(p.id) === newId);
       if (found) config.activeProfileName = found.name;
       safeStorageSet({ activeProfileId: newId, activeProfileName: config.activeProfileName });
       cachedHistoryData = { search: null, explain: null, translation: null, compare: null, correction: null };
-      if (isHistoryOpen) {
-        const badge = cardEl.querySelector('#ai-dict-history-profile-badge');
-        if (badge) badge.textContent = config.activeProfileName || 'Profile';
-        loadHistoryItems(activeHistoryMode, true);
-      }
+      syncProfileUI();
       syncCardLanguageRow();
       performLookup(currentSelectionText);
     });
@@ -3021,10 +3098,15 @@
       switchToAiTab();
       const cardBody = cardEl.querySelector('#ai-dict-card-body');
       if (cardBody) {
+        const loadingMsg = tab.mode === 'simple_llm'
+          ? 'Analyzing with Quick LLM (Not saved)...'
+          : (tab.mode === 'machine_translation'
+          ? 'Translating offline...'
+          : `Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...`);
         cardBody.innerHTML = `
           <div class="loading-box">
             <div class="spinner"></div>
-            <div style="font-size:12px; font-weight:600;">Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...</div>
+            <div style="font-size:12px; font-weight:600;">${loadingMsg}</div>
             <div style="font-size:11px; opacity:0.6; margin-top:4px;">"${escapeHtml(tab.word.length > 50 ? tab.word.slice(0, 50) + '...' : tab.word)}"</div>
           </div>
         `;
@@ -3684,10 +3766,15 @@
     switchToAiTab();
     const cardBody = cardEl?.querySelector('#ai-dict-card-body');
     if (cardBody) {
+      const loadingMsg = currentMode === 'simple_llm'
+        ? 'Analyzing with Quick LLM (Not saved)...'
+        : (currentMode === 'machine_translation'
+        ? 'Translating offline...'
+        : `Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...`);
       cardBody.innerHTML = `
         <div class="loading-box">
           <div class="spinner"></div>
-          <div style="font-size:12px; font-weight:600;">Generating & Saving to ${escapeHtml(config.activeProfileName || 'Profile')}...</div>
+          <div style="font-size:12px; font-weight:600;">${loadingMsg}</div>
           <div style="font-size:11px; opacity:0.6; margin-top:4px;">"${escapeHtml(cleanWord.length > 50 ? cleanWord.slice(0, 50) + '...' : cleanWord)}"</div>
         </div>
       `;
@@ -4999,12 +5086,14 @@
       });
     }
 
+    const isQuickLlm = currentMode === 'simple_llm' || config.defaultMode === 'simple_llm';
+
     const promoteBtn = secondaryCardEl.querySelector('#ai-dict-sec-to-main-btn');
     if (promoteBtn) {
       promoteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         closeSecondaryCard();
-        openCardAtRect(null, word, 'search');
+        openCardAtRect(null, word, isQuickLlm ? 'simple_llm' : 'search');
       });
     }
 
@@ -5016,13 +5105,23 @@
       const srcLang = appSettings[`searchSourceLang_${pid}`] || appSettings['SEARCH_SOURCE_LANG'] || '';
       const tgtLang = appSettings[`searchTargetLang_${pid}`] || appSettings['SEARCH_TARGET_LANG'] || '';
 
-      const res = await callBackend('/api/search', 'POST', {
+      const endpoint = isQuickLlm ? '/api/simple-llm/lookup' : '/api/search';
+      const requestBody = isQuickLlm ? {
+        text: word,
+        source_lang: srcLang || undefined,
+        target_lang: tgtLang || undefined,
+        model: config.simpleLlmModel || 'inclusionai/ling-3.0-flash',
+        profile_id: pid,
+        prompt_key: config.simpleLlmDefaultPrompt || 'quick_glance'
+      } : {
         term: word,
         profile_id: pid,
         session_id: config.activeSessionId || undefined,
         source_language: srcLang || undefined,
         target_language: tgtLang || undefined
-      });
+      };
+
+      const res = await callBackend(endpoint, 'POST', requestBody);
 
       if (thisToken !== secondaryLookupToken || !isSecondaryCardOpen || !secondaryCardEl) {
         return;
@@ -5050,13 +5149,14 @@
     const bodyEl = secondaryCardEl.querySelector('#ai-dict-sec-body');
     if (!bodyEl) return;
 
+    const isQuickLlm = currentMode === 'simple_llm' || config.defaultMode === 'simple_llm';
     const item = data.word || data;
-    const termTitle = item.term || termQuery;
-    const language = item.language || '';
-    const lemma = item.lemma || '';
+    const termTitle = item.term || data.term || termQuery;
+    const language = item.language || data.language || '';
+    const lemma = item.lemma || data.lemma || '';
     const chats = Array.isArray(data.chats) ? data.chats : [];
     const assistantChat = chats.find(c => c.role === 'assistant') || chats[0];
-    const explanationText = assistantChat ? assistantChat.content : (item.explanation || '');
+    const explanationText = assistantChat ? assistantChat.content : (data.content || item.explanation || '');
 
     const profileLangSetting = config.appSettings?.[`searchSourceLang_${config.activeProfileId}`] || config.appSettings?.['SEARCH_SOURCE_LANG'];
     const resolvedSpeechLang = resolveSpeechLanguage(language, profileLangSetting, config.activeProfileName);
@@ -5089,8 +5189,9 @@
       </div>
 
       <div class="secondary-footer">
-        <span>Saved to <strong>${escapeHtml(config.activeProfileName || 'Profile')}</strong></span>
-        <span>Viewed ${item?.view_count || 1}x</span>
+        ${isQuickLlm 
+          ? `<span>⚡ Quick LLM (Not saved)</span>` 
+          : `<span>Saved to <strong>${escapeHtml(config.activeProfileName || 'Profile')}</strong></span><span>Viewed ${item?.view_count || 1}x</span>`}
       </div>
     `;
 
@@ -5109,7 +5210,7 @@
       promoteLink.addEventListener('click', (e) => {
         e.stopPropagation();
         closeSecondaryCard();
-        openCardAtRect(null, termTitle, 'search');
+        openCardAtRect(null, termTitle, isQuickLlm ? 'simple_llm' : 'search');
       });
     }
 

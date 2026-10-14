@@ -477,8 +477,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Profile select event
   profileSelect.addEventListener('change', async (e) => {
-    const id = parseInt(e.target.value);
-    const selected = profiles.find(p => p.id === id);
+    const id = parseInt(e.target.value) || 1;
+    const selected = profiles.find(p => Number(p.id) === id);
     const name = selected ? selected.name : `Profile ${id}`;
 
     config.activeProfileId = id;
@@ -488,6 +488,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     activeProfileBadge.textContent = name;
     syncPopupLanguageRow();
     loadRecentWords(id);
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs && tabs[0];
+      if (activeTab?.id) {
+        chrome.tabs.sendMessage(activeTab.id, {
+          action: 'SET_ACTIVE_PROFILE',
+          profileId: id,
+          profileName: name
+        }).catch(() => {});
+      }
+    });
   });
 
   // Trigger mode radio change
@@ -750,7 +761,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   syncPopupLanguageRow();
   searchModePills.forEach(pill => {
-    pill.addEventListener('click', () => {
+    pill.addEventListener('click', async () => {
       const mode = pill.dataset.mode;
       selectedSearchMode = mode;
       searchModePills.forEach(p => p.classList.toggle('active', p.dataset.mode === mode));
@@ -771,6 +782,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       syncPopupLanguageRow();
       quickSearchInput.focus();
+
+      // Persist chosen mode as defaultMode so web lookups immediately honor this mode!
+      config.defaultMode = mode;
+      await chrome.storage.local.set({ defaultMode: mode });
+      updateLlmModeUI();
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs && tabs[0];
+        if (activeTab?.id) {
+          chrome.tabs.sendMessage(activeTab.id, {
+            action: 'SET_DEFAULT_MODE',
+            mode: mode
+          }).catch(() => {});
+        }
+      });
     });
   });
 
@@ -1249,10 +1274,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (Array.isArray(data) && data.length > 0) {
         profiles = data;
         profileSelect.innerHTML = profiles.map(p => `
-          <option value="${p.id}" ${p.id === config.activeProfileId ? 'selected' : ''}>👤 ${escapeHtml(p.name)}</option>
+          <option value="${p.id}" ${Number(p.id) === Number(config.activeProfileId) ? 'selected' : ''}>👤 ${escapeHtml(p.name)}</option>
         `).join('');
 
-        const activeP = profiles.find(p => p.id === config.activeProfileId) || profiles[0];
+        const activeP = profiles.find(p => Number(p.id) === Number(config.activeProfileId)) || profiles[0];
         config.activeProfileId = activeP.id;
         config.activeProfileName = activeP.name;
         activeProfileBadge.textContent = activeP.name;

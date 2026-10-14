@@ -150,6 +150,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Active Profile change listener
+  if (activeProfileSelect) {
+    activeProfileSelect.addEventListener('change', async (e) => {
+      const pId = parseInt(e.target.value) || 1;
+      const pObj = profilesList.find(p => Number(p.id) === pId);
+      const pName = pObj ? pObj.name : `Profile ${pId}`;
+      currentSettings.activeProfileId = pId;
+      currentSettings.activeProfileName = pName;
+      await chrome.storage.local.set({ activeProfileId: pId, activeProfileName: pName });
+      showToast(`Active profile set to ${pName}!`);
+    });
+  }
+
   // Default Persistent Window checkbox live change
   if (optPersistentWindow) {
     optPersistentWindow.addEventListener('change', async (e) => {
@@ -401,7 +414,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function populateProfilesDropdown() {
     if (!profilesList || profilesList.length === 0) return;
     activeProfileSelect.innerHTML = profilesList.map(p => `
-      <option value="${p.id}" ${p.id === currentSettings.activeProfileId ? 'selected' : ''}>👤 ${escapeHtml(p.name)}</option>
+      <option value="${p.id}" ${Number(p.id) === Number(currentSettings.activeProfileId) ? 'selected' : ''}>👤 ${escapeHtml(p.name)}</option>
     `).join('');
   }
 
@@ -531,7 +544,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const trigVal = trigSelected ? trigSelected.value : 'bubble';
 
     const pId = parseInt(activeProfileSelect.value) || 1;
-    const pObj = profilesList.find(p => p.id === pId);
+    const pObj = profilesList.find(p => Number(p.id) === pId);
     const pName = pObj ? pObj.name : `Profile ${pId}`;
 
     const blacklistLines = optBlacklist.value
