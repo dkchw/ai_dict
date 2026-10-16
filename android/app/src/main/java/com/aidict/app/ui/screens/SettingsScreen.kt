@@ -268,6 +268,86 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
                     }
                     Switch(checked = enterToSend, onCheckedChange = { viewModel.saveSetting("ENTER_TO_SEND", it.toString()) })
                 }
+
+                val defaultAskModeStr by viewModel.defaultAskAiDictMode.collectAsState()
+                var askModeExpanded by remember { mutableStateOf(false) }
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Text("Default 'Ask AI Dict' Action", style = MaterialTheme.typography.titleMedium)
+                    Text("Action executed when selecting 'Ask AI Dict' from system text menu", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    ExposedDropdownMenuBox(
+                        expanded = askModeExpanded,
+                        onExpandedChange = { askModeExpanded = !askModeExpanded },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = when (defaultAskModeStr) {
+                                "quick_llm" -> "Quick LLM (Ling Flash • Ephemeral)"
+                                "translate" -> "Translate (Full LLM)"
+                                "correct" -> "Grammar Correct"
+                                else -> "Full LLM (Word / Explain • Saved)"
+                            },
+                            onValueChange = {},
+                            readOnly = true,
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = askModeExpanded) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = askModeExpanded,
+                            onDismissRequest = { askModeExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Full LLM (Word / Explain)", style = MaterialTheme.typography.bodyMedium)
+                                        Text("Comprehensive definitions, idioms, examples. Saved to history.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.saveSetting("DEFAULT_ASK_AI_DICT_MODE", "full_llm")
+                                    askModeExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Quick LLM (Ling Flash)", style = MaterialTheme.typography.bodyMedium)
+                                        Text("Fast analytical lenses. Ephemeral (unsaved by default).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.saveSetting("DEFAULT_ASK_AI_DICT_MODE", "quick_llm")
+                                    askModeExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Translate (Full LLM)", style = MaterialTheme.typography.bodyMedium)
+                                        Text("Contextual full AI translation. Saved to history.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.saveSetting("DEFAULT_ASK_AI_DICT_MODE", "translate")
+                                    askModeExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Grammar Correct", style = MaterialTheme.typography.bodyMedium)
+                                        Text("Spelling & grammar correction with explanations.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.saveSetting("DEFAULT_ASK_AI_DICT_MODE", "correct")
+                                    askModeExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
         item {

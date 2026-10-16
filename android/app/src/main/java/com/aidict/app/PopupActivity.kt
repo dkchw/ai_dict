@@ -68,9 +68,7 @@ class PopupActivity : ComponentActivity() {
             return
         }
         val textExtra = extractText(intent)
-        if (textExtra.isNotBlank()) {
-            pendingTrigger.value = SearchTrigger(textExtra)
-        }
+        pendingTrigger.value = SearchTrigger(textExtra)
     }
 
     private fun extractText(intent: Intent?): String {
@@ -87,9 +85,7 @@ class PopupActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         val initialText = extractText(intent)
-        if (initialText.isNotBlank()) {
-            pendingTrigger.value = SearchTrigger(initialText)
-        }
+        pendingTrigger.value = SearchTrigger(initialText)
         
         val database = AppDatabase.getDatabase(this)
         val repository = LlmRepository(database)
@@ -121,6 +117,12 @@ class PopupActivity : ComponentActivity() {
             val words = if (targetQuery.isNotBlank()) targetQuery.split(Regex("\\s+")).filter { it.isNotBlank() } else emptyList()
             val isMultiWordExplain = words.size > 3
             val explicitModeStr = intent.getStringExtra("EXTRA_MODE")
+            
+            val activeProfileId = appViewModel.uiState.value.activeProfile?.id ?: 1
+            val globalAskMode by settingsViewModel.getSettingFlow("DEFAULT_ASK_AI_DICT_MODE", "full_llm").collectAsState()
+            val profileAskMode by settingsViewModel.getSettingFlow("PROFILE_${activeProfileId}_DEFAULT_ASK_AI_DICT_MODE", "").collectAsState()
+            val effectiveAskMode = if (profileAskMode.isNotBlank()) profileAskMode else globalAskMode
+
             val targetMode = when (explicitModeStr?.lowercase()) {
                 "dict" -> 0
                 "compare" -> 1
@@ -128,7 +130,12 @@ class PopupActivity : ComponentActivity() {
                 "explain" -> 3
                 "correct" -> 4
                 "quick_llm", "quickllm", "quick" -> 5
-                else -> if (isMultiWordExplain) 3 else 0
+                else -> when (effectiveAskMode) {
+                    "quick_llm", "quickllm", "quick" -> 5
+                    "translate" -> 2
+                    "correct" -> 4
+                    else -> if (isMultiWordExplain) 3 else 0
+                }
             }
 
             LaunchedEffect(currentTrigger) {
@@ -140,7 +147,8 @@ class PopupActivity : ComponentActivity() {
                     kotlinx.coroutines.delay(100) // Brief delay to ensure UI and AppViewModel are ready
                     val profileId = appViewModel.uiState.value.activeProfile?.id ?: 1
                     val explicitMode = intent.getStringExtra("EXTRA_MODE")?.lowercase()
-                    when (explicitMode) {
+                    val effectiveMode = explicitMode ?: searchViewModel.getProfileSetting(profileId, "DEFAULT_ASK_AI_DICT_MODE") ?: "full_llm"
+                    when (effectiveMode) {
                         "correct" -> {
                             searchViewModel.clearCurrentSearch("correct")
                             searchViewModel.correctInput = text
@@ -160,9 +168,15 @@ class PopupActivity : ComponentActivity() {
                         "quick_llm", "quickllm", "quick" -> {
                             searchViewModel.clearCurrentSearch("quick_llm")
                             searchViewModel.quickLlmInput = text
-                            val sourceLang = searchViewModel.getProfileSetting(profileId, "QUICK_LLM_SOURCE") ?: "Auto Detect"
-                            val targetLang = searchViewModel.getProfileSetting(profileId, "QUICK_LLM_TARGET") ?: "English"
-                            val defaultLens = searchViewModel.getProfileSetting(profileId, "QUICK_LLM_DEFAULT_LENS") ?: "quick_glance"
+                            val sourceLang = searchViewModel.getProfileSetting(profileId, "SEARCH_SOURCE")
+                                ?: searchViewModel.getProfileSetting(profileId, "QUICK_LLM_SOURCE")
+                                ?: "Auto Detect"
+                            val targetLang = searchViewModel.getProfileSetting(profileId, "SEARCH_TARGET")
+                                ?: searchViewModel.getProfileSetting(profileId, "QUICK_LLM_TARGET")
+                                ?: "English"
+                            val defaultLens = searchViewModel.getProfileSetting(profileId, "SIMPLE_LLM_DEFAULT_PROMPT")
+                                ?: searchViewModel.getProfileSetting(profileId, "QUICK_LLM_DEFAULT_LENS")
+                                ?: "quick_glance"
                             searchViewModel.streamQuickLlm(text, sourceLang, targetLang, defaultLens, profileId)
                         }
                         "dict" -> {

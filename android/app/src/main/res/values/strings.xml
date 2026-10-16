@@ -9,4 +9,8 @@
     <string name="translate_action">Translate</string>
     <string name="translate_with_ai">Translate with AI</string>
     <string name="quick_llm_action">Quick LLM</string>
+    <string name="default_ask_ai_dict_mode">Default \'Ask AI Dict\' Action</string>
+    <string name="default_ask_ai_dict_mode_desc">Action executed when selecting \'Ask AI Dict\' from system text menu</string>
+    <string name="mode_full_llm">Full LLM (Word / Explain)</string>
+    <string name="mode_quick_llm">Quick LLM (Ling Flash)</string>
 </resources>
